@@ -185,6 +185,17 @@ static bool buddy_json_required_u64(const cJSON *object, const char *name, uint6
            buddy_json_u64(object, name, value);
 }
 
+static bool buddy_json_required_bool(const cJSON *object, const char *name, bool *value)
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
+
+    if (!cJSON_IsBool(item)) {
+        return false;
+    }
+    *value = cJSON_IsTrue(item);
+    return true;
+}
+
 static bool buddy_parse_prompt(const cJSON *prompt_json, unsigned running, buddy_prompt_t *prompt)
 {
     const char *id;
@@ -212,6 +223,34 @@ static bool buddy_parse_prompt(const cJSON *prompt_json, unsigned running, buddy
                            &prompt->hint_truncated);
 }
 
+static bool buddy_parse_codex_usage(const cJSON *object, buddy_codex_usage_t *usage)
+{
+    const cJSON *codex = cJSON_GetObjectItemCaseSensitive(object, "codex");
+    const char *plan;
+    size_t plan_length;
+
+    if (codex == NULL) {
+        return true;
+    }
+    if (!cJSON_IsObject(codex) ||
+        !buddy_json_optional_string(codex, "plan", &plan, &plan_length) || plan == NULL ||
+        plan_length >= sizeof(usage->plan) ||
+        !buddy_json_required_unsigned(codex, "primary_used", &usage->primary_used_percent) ||
+        !buddy_json_required_unsigned(codex, "primary_window", &usage->primary_window_minutes) ||
+        !buddy_json_required_u64(codex, "primary_reset", &usage->primary_resets_at) ||
+        !buddy_json_required_unsigned(codex, "secondary_used", &usage->secondary_used_percent) ||
+        !buddy_json_required_unsigned(codex, "secondary_window", &usage->secondary_window_minutes) ||
+        !buddy_json_required_u64(codex, "secondary_reset", &usage->secondary_resets_at) ||
+        !buddy_json_required_u64(codex, "completion_seq", &usage->completion_sequence) ||
+        !buddy_json_required_bool(codex, "available", &usage->available) ||
+        usage->primary_used_percent > 100U || usage->secondary_used_percent > 100U ||
+        !buddy_copy_utf8(usage->plan, sizeof(usage->plan), plan, plan_length, NULL)) {
+        return false;
+    }
+    usage->present = true;
+    return true;
+}
+
 static bool buddy_parse_heartbeat(const cJSON *object, buddy_event_t *event)
 {
     const cJSON *entries;
@@ -229,6 +268,9 @@ static bool buddy_parse_heartbeat(const cJSON *object, buddy_event_t *event)
         message == NULL ||
         !buddy_copy_utf8(event->heartbeat.message, sizeof(event->heartbeat.message), message,
                          message_length, &event->heartbeat.message_truncated)) {
+        return false;
+    }
+    if (!buddy_parse_codex_usage(object, &event->heartbeat.codex_usage)) {
         return false;
     }
     event->heartbeat.connected = true;

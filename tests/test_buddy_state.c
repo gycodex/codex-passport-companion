@@ -96,6 +96,32 @@ static void test_heartbeat_mapping(void)
     assert(snapshot.character == BUDDY_CHARACTER_BUSY);
 }
 
+static void test_codex_completion_sequence_celebrates_once(void)
+{
+    buddy_state_t state;
+    buddy_action_t action = {0};
+    buddy_event_t heartbeat = test_heartbeat_event(0, 0);
+    buddy_settings_snapshot_t settings = {.highest_celebrated_level = 4};
+
+    heartbeat.heartbeat.codex_usage.available = true;
+    heartbeat.heartbeat.codex_usage.present = true;
+    heartbeat.heartbeat.codex_usage.primary_used_percent = 20;
+    heartbeat.heartbeat.codex_usage.secondary_used_percent = 60;
+    heartbeat.heartbeat.codex_usage.completion_sequence = 5;
+    snprintf(heartbeat.heartbeat.codex_usage.plan,
+             sizeof(heartbeat.heartbeat.codex_usage.plan), "%s", "plus");
+
+    buddy_state_init(&state, &settings);
+    buddy_state_reduce(&state, &heartbeat, 1000, &action);
+    assert(action.type == BUDDY_ACTION_SETTINGS);
+    assert(state.character == BUDDY_CHARACTER_CELEBRATE);
+    assert(state.codex_usage.primary_used_percent == 20);
+
+    buddy_state_reduce(&state, &heartbeat, 1001, &action);
+    assert(action.type == BUDDY_ACTION_UI_REFRESH);
+    assert(state.highest_celebrated_level == 5);
+}
+
 static void test_character_priority(void)
 {
     struct priority_case {
@@ -946,6 +972,7 @@ int main(void)
 {
     test_offline_initialization();
     test_heartbeat_mapping();
+    test_codex_completion_sequence_celebrates_once();
     test_character_priority();
     test_timeout_clears_prompt();
     test_heartbeat_does_not_overwrite_persisted_identity();

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "buddy_types.h"
 
@@ -10,3 +12,6 @@ void buddy_ui_render(const buddy_ui_snapshot_t *snapshot);
 void buddy_ui_show_passkey(uint32_t passkey);
 void buddy_ui_tick(uint64_t elapsed_ms);
 void buddy_ui_scroll(int delta);
+
+/* Write the current 240x320 canvas using the community capture protocol. */
+bool buddy_ui_write_screenshot(FILE *stream);

@@ -14,6 +14,7 @@
 #define BUDDY_COMMAND_MAX 32
 #define BUDDY_HINT_MAX 320
 #define BUDDY_JSON_LINE_MAX 4096
+#define BUDDY_PLAN_MAX 32
 
 typedef enum {
     BUDDY_CONNECTION_OFFLINE,
@@ -151,6 +152,19 @@ typedef struct {
 } buddy_prompt_t;
 
 typedef struct {
+    char plan[BUDDY_PLAN_MAX];
+    unsigned primary_used_percent;
+    unsigned primary_window_minutes;
+    uint64_t primary_resets_at;
+    unsigned secondary_used_percent;
+    unsigned secondary_window_minutes;
+    uint64_t secondary_resets_at;
+    uint64_t completion_sequence;
+    bool present;
+    bool available;
+} buddy_codex_usage_t;
+
+typedef struct {
     char message[BUDDY_MESSAGE_MAX];
     char entries[BUDDY_ENTRY_COUNT][BUDDY_ENTRY_MAX];
     unsigned total;
@@ -162,6 +176,7 @@ typedef struct {
     bool message_truncated;
     bool entries_truncated[BUDDY_ENTRY_COUNT];
     buddy_prompt_t prompt;
+    buddy_codex_usage_t codex_usage;
 } buddy_heartbeat_t;
 
 typedef struct {
@@ -251,6 +266,7 @@ typedef struct {
     unsigned waiting;
     uint64_t tokens;
     uint64_t tokens_today;
+    buddy_codex_usage_t codex_usage;
     int64_t epoch_seconds;
     int32_t timezone_offset_seconds;
     uint64_t time_received_ms;

@@ -8,6 +8,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include "driver/usb_serial_jtag_vfs.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
@@ -38,6 +39,7 @@
 #define BUDDY_APP_TICK_MS 100U
 #define BUDDY_BATTERY_SAMPLE_MS 10000ULL
 #define BUDDY_SETTINGS_SERVICE_MS 1000ULL
+#define BUDDY_SCREENSHOT_STACK_SIZE 8192U
 
 typedef enum {
     BUDDY_CONTROL_KEY,
@@ -152,9 +154,9 @@ static void buddy_default_name(char name[BUDDY_NAME_MAX])
     uint8_t mac[6];
 
     if (esp_read_mac(mac, ESP_MAC_BT) == ESP_OK) {
-        (void)snprintf(name, BUDDY_NAME_MAX, "Claude-%02X%02X%02X", mac[3], mac[4], mac[5]);
+        (void)snprintf(name, BUDDY_NAME_MAX, "Codex-%02X%02X%02X", mac[3], mac[4], mac[5]);
     } else {
-        buddy_copy_text(name, BUDDY_NAME_MAX, "Claude-Buddy");
+        buddy_copy_text(name, BUDDY_NAME_MAX, "Codex-Buddy");
     }
 }
 
@@ -529,6 +531,36 @@ static bool buddy_control_to_event(const buddy_control_event_t *control,
     return true;
 }
 
+static int buddy_battery_percent_from_voltage(int millivolts)
+{
+    static const struct {
+        uint16_t millivolts;
+        uint8_t percent;
+    } curve[] = {
+        {3300, 0}, {3500, 5}, {3700, 10}, {3750, 20}, {3790, 30},
+        {3830, 40}, {3870, 50}, {3910, 60}, {3950, 70}, {3980, 75},
+        {4020, 80}, {4080, 85}, {4110, 90}, {4150, 95}, {4200, 100},
+    };
+    size_t index;
+
+    if (millivolts < 3000 || millivolts > 4500) {
+        return -1;
+    }
+    if (millivolts <= curve[0].millivolts) {
+        return curve[0].percent;
+    }
+    for (index = 1; index < sizeof(curve) / sizeof(curve[0]); ++index) {
+        if (millivolts <= curve[index].millivolts) {
+            int voltage_range = curve[index].millivolts - curve[index - 1].millivolts;
+            int percent_range = curve[index].percent - curve[index - 1].percent;
+            return curve[index - 1].percent +
+                   (millivolts - curve[index - 1].millivolts) * percent_range /
+                       voltage_range;
+        }
+    }
+    return 100;
+}
+
 static void buddy_sample_battery(buddy_state_t *state)
 {
     int percent;
@@ -538,9 +570,16 @@ static void buddy_sample_battery(buddy_state_t *state)
         state->battery_available = false;
         return;
     }
-    percent = bsp_battery_soc();
     millivolts = bsp_battery_mv();
-    if (percent < 0 || percent > 100 || millivolts < 0 || millivolts > UINT16_MAX) {
+    percent = bsp_battery_soc();
+    if (millivolts < 3000 || millivolts > 4500 || millivolts > UINT16_MAX) {
+        state->battery_available = false;
+        return;
+    }
+    if (percent < 0 || percent > 100 || (percent == 0 && millivolts >= 3500)) {
+        percent = buddy_battery_percent_from_voltage(millivolts);
+    }
+    if (percent < 0 || percent > 100) {
         state->battery_available = false;
         return;
     }
@@ -624,7 +663,7 @@ static esp_err_t buddy_set_ble_enabled(buddy_state_t *state, bool enabled)
 
     if (buddy_settings_set_ble_enabled(enabled) != ESP_OK) {
         state->settings.ble_enabled = !enabled;
-        buddy_copy_text(state->message, sizeof(state->message), "BLE setting failed");
+        buddy_copy_text(state->message, sizeof(state->message), "蓝牙设置失败");
         return ESP_FAIL;
     }
     if (enabled) {
@@ -641,12 +680,12 @@ static esp_err_t buddy_set_ble_enabled(buddy_state_t *state, bool enabled)
         if (buddy_settings_set_ble_enabled(result.effective_enabled) != ESP_OK ||
             buddy_settings_flush(true) != ESP_OK) {
             buddy_copy_text(state->message, sizeof(state->message),
-                            "BLE rollback failed");
+                            "蓝牙设置回退失败");
         } else {
             buddy_copy_text(state->message, sizeof(state->message),
                             result.recovery_attempted && result.effective_enabled
-                                ? "BLE stop failed; restored"
-                                : "BLE update failed");
+                                ? "蓝牙停止失败，已恢复"
+                                : "蓝牙更新失败");
         }
         state->settings.ble_enabled = result.effective_enabled;
         return result.request_status;
@@ -661,7 +700,7 @@ static esp_err_t buddy_factory_reset(buddy_state_t *state)
     buddy_settings_snapshot_t defaults = {0};
 
     if (buddy_settings_factory_reset() != ESP_OK) {
-        buddy_copy_text(state->message, sizeof(state->message), "Factory reset failed");
+        buddy_copy_text(state->message, sizeof(state->message), "恢复出厂设置失败");
         return ESP_FAIL;
     }
     defaults.ble_enabled = true;
@@ -669,16 +708,16 @@ static esp_err_t buddy_factory_reset(buddy_state_t *state)
     if (buddy_settings_set_name(defaults.name) != ESP_OK ||
         buddy_settings_flush(true) != ESP_OK) {
         buddy_copy_text(state->message, sizeof(state->message),
-                        "Factory defaults save failed");
+                        "出厂默认设置保存失败");
         return ESP_FAIL;
     }
     buddy_state_init(state, &defaults);
     buddy_sample_battery(state);
-    buddy_copy_text(state->message, sizeof(state->message), "Factory reset complete");
+    buddy_copy_text(state->message, sizeof(state->message), "已恢复出厂设置");
     if (!atomic_load(&s_ble_initialized)) {
         buddy_set_ble_enabled(state, true);
     } else if (buddy_ble_start() != ESP_OK) {
-        buddy_copy_text(state->message, sizeof(state->message), "BLE restart failed");
+        buddy_copy_text(state->message, sizeof(state->message), "蓝牙重启失败");
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -743,10 +782,10 @@ static esp_err_t buddy_orchestrator_unpair(void *context)
     buddy_state_t *state = context;
 
     if (buddy_ble_ensure_initialized() != ESP_OK || buddy_ble_delete_bonds() != ESP_OK) {
-        buddy_copy_text(state->message, sizeof(state->message), "Unpair failed");
+        buddy_copy_text(state->message, sizeof(state->message), "解除配对失败");
         return ESP_FAIL;
     }
-    buddy_reset_transient_state(state, "Unpairing");
+    buddy_reset_transient_state(state, "正在解除配对");
     return ESP_OK;
 }
 
@@ -987,6 +1026,42 @@ static void buddy_app_task(void *context)
     }
 }
 
+static void buddy_screenshot_task(void *context)
+{
+    char request[64];
+
+    (void)context;
+    setvbuf(stdin, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0);
+    usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_LF);
+    usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_LF);
+
+    for (;;) {
+        size_t length;
+
+        if (fgets(request, sizeof(request), stdin) == NULL) {
+            clearerr(stdin);
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+        length = strcspn(request, "\r\n");
+        request[length] = '\0';
+        if (strcmp(request, "FAP_SCREENSHOT_V1") != 0) {
+            continue;
+        }
+
+        esp_log_level_t previous_level = esp_log_level_get("*");
+        esp_log_level_set("*", ESP_LOG_NONE);
+        flockfile(stdout);
+        if (bsp_lvgl_lock(5000)) {
+            (void)buddy_ui_write_screenshot(stdout);
+            bsp_lvgl_unlock();
+        }
+        funlockfile(stdout);
+        esp_log_level_set("*", previous_level);
+    }
+}
+
 static esp_err_t buddy_nvs_init(void)
 {
     esp_err_t err = nvs_flash_init();
@@ -1004,7 +1079,7 @@ void app_main(void)
 {
     esp_err_t err;
 
-    ESP_LOGI(TAG, "Claude Desktop Buddy starting");
+    ESP_LOGI(TAG, "Codex Usage Buddy starting");
     if (buddy_nvs_init() != ESP_OK) {
         ESP_LOGE(TAG, "NVS initialization failed");
         return;
@@ -1053,6 +1128,10 @@ void app_main(void)
                     BUDDY_APP_PRIORITY, &s_app_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "application queue/task initialization failed");
         return;
+    }
+    if (xTaskCreate(buddy_screenshot_task, "fap_capture", BUDDY_SCREENSHOT_STACK_SIZE,
+                    NULL, BUDDY_APP_PRIORITY - 1U, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "screen-capture task initialization failed");
     }
     if (bsp_button_init(on_key, NULL) != ESP_OK) {
         ESP_LOGW(TAG, "button initialization failed; approvals remain fail-closed");

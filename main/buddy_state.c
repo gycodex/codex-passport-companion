@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define BUDDY_HEART_ANIMATION_MS 5000
-#define BUDDY_CELEBRATION_ANIMATION_MS 1500
+#define BUDDY_CELEBRATION_ANIMATION_MS 6000
 #define BUDDY_HEARTBEAT_TIMEOUT_MS 30000
 #define BUDDY_TOKEN_CELEBRATION_STEP 50000
 
@@ -184,7 +184,7 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
                 state->reset_open = false;
                 buddy_set_ui_refresh(action);
             } else {
-                buddy_copy(state->message, sizeof(state->message), "No custom character installed");
+                buddy_copy(state->message, sizeof(state->message), "尚未安装自定义角色");
                 buddy_set_ui_refresh(action);
             }
         }
@@ -219,7 +219,7 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
     case BUDDY_SETTINGS_WIFI:
     case BUDDY_SETTINGS_LED:
     case BUDDY_SETTINGS_CLOCK_ROTATION:
-        buddy_copy(state->message, sizeof(state->message), "Unavailable on this hardware");
+        buddy_copy(state->message, sizeof(state->message), "此硬件暂不支持该功能");
         buddy_set_ui_refresh(action);
         break;
     case BUDDY_SETTINGS_ASCII_PET:
@@ -276,7 +276,7 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
                 state->page = BUDDY_PAGE_INFO;
                 state->info_page = 5;
             } else if (state->menu_selection == BUDDY_MENU_DEMO) {
-                buddy_copy(state->message, sizeof(state->message), "Demo unavailable");
+                buddy_copy(state->message, sizeof(state->message), "演示功能暂不可用");
             }
             state->menu_open = false;
         }
@@ -325,7 +325,9 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
                                   uint32_t connection_generation, uint64_t now_ms,
                                   buddy_action_t *action)
 {
-    uint64_t level = heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;
+    uint64_t level = heartbeat->codex_usage.present
+                         ? heartbeat->codex_usage.completion_sequence
+                         : heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;
 
     state->heartbeat = *heartbeat;
     state->connected = heartbeat->connected;
@@ -355,6 +357,7 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
     state->waiting = heartbeat->waiting;
     state->tokens = heartbeat->tokens;
     state->tokens_today = heartbeat->tokens_today;
+    state->codex_usage = heartbeat->codex_usage;
     buddy_copy(state->message, sizeof(state->message), heartbeat->message);
     buddy_copy_entries(state->entries, heartbeat->entries);
 
@@ -591,7 +594,7 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
         break;
     case BUDDY_EVENT_BOND_DELETE_RESULT:
         buddy_copy(state->message, sizeof(state->message),
-                   event->ble.success ? "Unpaired" : "Unpair failed");
+                   event->ble.success ? "已解除配对" : "解除配对失败");
         buddy_set_ui_refresh(action);
         break;
     case BUDDY_EVENT_PERMISSION_SEND_RESULT:
@@ -677,6 +680,7 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     snapshot->waiting = state->waiting;
     snapshot->tokens = state->tokens;
     snapshot->tokens_today = state->tokens_today;
+    snapshot->codex_usage = state->codex_usage;
     snapshot->epoch_seconds = state->epoch_seconds;
     snapshot->timezone_offset_seconds = state->timezone_offset_seconds;
     snapshot->time_received_ms = state->time_received_ms;

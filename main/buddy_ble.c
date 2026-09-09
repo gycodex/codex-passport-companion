@@ -1444,7 +1444,7 @@ esp_err_t buddy_ble_init(const buddy_ble_config_t *config)
         s_ble.mutex = NULL;
         return err;
     }
-    (void)snprintf(s_device_name, sizeof(s_device_name), "Claude-%02X%02X%02X", mac[3], mac[4],
+    (void)snprintf(s_device_name, sizeof(s_device_name), "Codex-%02X%02X%02X", mac[3], mac[4],
                    mac[5]);
 
     rc = buddy_ble_lifecycle_init(&lifecycle_ops, &retry_safe);

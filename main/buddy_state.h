@@ -21,6 +21,7 @@ typedef struct {
     unsigned waiting;
     uint64_t tokens;
     uint64_t tokens_today;
+    buddy_codex_usage_t codex_usage;
     int64_t epoch_seconds;
     int32_t timezone_offset_seconds;
     uint64_t time_received_ms;

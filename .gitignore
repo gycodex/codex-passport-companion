@@ -1,6 +1,12 @@
-build/
+build*/
 sdkconfig
 sdkconfig.old
 managed_components/
 dependencies.lock
 .vscode/
+.DS_Store
+.venv/
+.venv-bridge/
+__pycache__/
+*.pyc
+dist/

@@ -44,8 +44,8 @@ static void test_only_official_plain_heartbeat_is_normal(void)
         OFFICIAL_TIME_JSON,
         OFFICIAL_OWNER_JSON,
         OFFICIAL_STATUS_REQUEST_JSON,
-        "{\"total\":0,\"running\":0,\"waiting\":0,\"msg\":\"idle\","
-        "\"entries\":[],\"tokens\":0,\"tokens_today\":0,\"pr\\u006fmpt\":{}}",
+        ("{\"total\":0,\"running\":0,\"waiting\":0,\"msg\":\"idle\","
+         "\"entries\":[],\"tokens\":0,\"tokens_today\":0,\"pr\\u006fmpt\":{}}"),
         "{\"total\":0,}",
         "{\"total\":0} trailing",
         "not json",

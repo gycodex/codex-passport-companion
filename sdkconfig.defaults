@@ -3,13 +3,21 @@ CONFIG_IDF_TARGET="esp32c3"
 # 注:ESP32-C3 无 PSRAM,故不设 CONFIG_SPIRAM。
 
 # --- Flash ---
-# 取 4MB:镜像头里的 flash 大小若【大于】芯片实际容量,启动时 esp_flash_init_default_chip
-# 探测失败会 assert 进而无限重启;反之(头 ≤ 实际)正常。开源硬件用户手上可能是 4MB 或
-# 8MB 批次,取 4MB 则同一份产物两种板子都能启动。
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-# 烧录时按实际探测容量回写镜像头,进一步保证兼容。
-CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# Current AI Passport production baseline uses 8 MB Flash. Keep the application,
+# protected identity, and permanent Recovery offsets compatible with the mini-program.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=n
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Holding UP (GPIO0) for five seconds enters the permanent factory Recovery image.
+CONFIG_BOOTLOADER_FACTORY_RESET=y
+CONFIG_BOOTLOADER_NUM_PIN_FACTORY_RESET=0
+CONFIG_BOOTLOADER_FACTORY_RESET_PIN_LOW=y
+CONFIG_BOOTLOADER_OTA_DATA_ERASE=y
+CONFIG_BOOTLOADER_DATA_FACTORY_RESET=""
+CONFIG_BOOTLOADER_HOLD_TIME_GPIO=5
 
 # --- 控制台:USB-Serial-JTAG(C3 原生 USB,GPIO18/19)---
 # 不用 UART0:其默认 TX=GPIO21 与本板背光引脚冲突。

@@ -12,12 +12,12 @@
 #define BUDDY_UI_ACTION_Y 296
 #define BUDDY_UI_ACTION_H 24
 
-#define BUDDY_ACTION_HOME "UP:PAGE  HOLD OK:MENU"
-#define BUDDY_ACTION_PET "DOWN:INFO  HOLD OK:MENU"
-#define BUDDY_ACTION_INFO "DOWN:NEXT  HOLD OK:MENU"
-#define BUDDY_ACTION_SETTINGS "UP/DOWN:SELECT  OK:SET"
-#define BUDDY_ACTION_CONFIRM "OK:YES  DOWN:NO"
-#define BUDDY_ACTION_APPROVAL "OK:ALLOW  DOWN:DENY"
+#define BUDDY_ACTION_HOME "上键：换页  长按确认：菜单"
+#define BUDDY_ACTION_PET "下键：详情  长按确认：菜单"
+#define BUDDY_ACTION_INFO "下键：下一页  长按确认：菜单"
+#define BUDDY_ACTION_SETTINGS "上下键：选择  确认键：设置"
+#define BUDDY_ACTION_CONFIRM "确认键：是  下键：否"
+#define BUDDY_ACTION_APPROVAL "确认键：允许  下键：拒绝"
 
 typedef unsigned (*buddy_text_measure_fn)(const char *text, size_t length, void *context);
 

@@ -45,6 +45,36 @@ static void test_heartbeat_optional_prompt_stays_in_heartbeat_snapshot(void)
     assert(strcmp(event.heartbeat.prompt.hint, "rm -rf /tmp/foo") == 0);
 }
 
+static void test_codex_usage_snapshot_maps_and_validates_percentages(void)
+{
+    buddy_event_t event = {0};
+    const char *json =
+        "{\"total\":1,\"running\":0,\"waiting\":0,\"msg\":\"AI task complete\","
+        "\"entries\":[],\"tokens\":0,\"tokens_today\":0,\"codex\":{"
+        "\"plan\":\"plus\",\"primary_used\":12,\"primary_window\":300,"
+        "\"primary_reset\":1788502284,\"secondary_used\":62,"
+        "\"secondary_window\":10080,\"secondary_reset\":1788749965,"
+        "\"completion_seq\":7,\"available\":true}}";
+
+    assert(parse(json, &event) == BUDDY_EVENT_HEARTBEAT);
+    assert(event.heartbeat.codex_usage.available);
+    assert(event.heartbeat.codex_usage.present);
+    assert(strcmp(event.heartbeat.codex_usage.plan, "plus") == 0);
+    assert(event.heartbeat.codex_usage.primary_used_percent == 12);
+    assert(event.heartbeat.codex_usage.primary_window_minutes == 300);
+    assert(event.heartbeat.codex_usage.secondary_used_percent == 62);
+    assert(event.heartbeat.codex_usage.secondary_window_minutes == 10080);
+    assert(event.heartbeat.codex_usage.completion_sequence == 7);
+
+    assert(parse(
+        "{\"total\":1,\"running\":0,\"waiting\":0,\"msg\":\"x\","
+        "\"entries\":[],\"tokens\":0,\"tokens_today\":0,\"codex\":{"
+        "\"plan\":\"plus\",\"primary_used\":101,\"primary_window\":300,"
+        "\"primary_reset\":1,\"secondary_used\":0,\"secondary_window\":10080,"
+        "\"secondary_reset\":2,\"completion_seq\":0,\"available\":true}}",
+        &event) == BUDDY_EVENT_MALFORMED);
+}
+
 static void test_unpair_maps_confirmation_event(void)
 {
     buddy_event_t event = {0};
@@ -413,6 +443,7 @@ int main(void)
 {
     test_official_heartbeat_maps_documented_fields();
     test_heartbeat_optional_prompt_stays_in_heartbeat_snapshot();
+    test_codex_usage_snapshot_maps_and_validates_percentages();
     test_unpair_maps_confirmation_event();
     test_file_transfer_commands_are_unsupported();
     test_unknown_command_is_rejected();
