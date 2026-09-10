@@ -1065,8 +1065,31 @@ static void test_idle_sleep_and_wake(void)
     assert(action.type == BUDDY_ACTION_SETTINGS);
 }
 
+static void test_wifi_setup_requires_explicit_local_click(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_state_init(&state, NULL);
+    state.page = BUDDY_PAGE_SETTINGS;
+    state.settings_selection = BUDDY_SETTINGS_WIFI;
+    buddy_event_t click = {.type=BUDDY_EVENT_KEY_CLICK, .key=BUDDY_KEY_OK};
+    buddy_state_reduce(&state, &click, 1000, &action);
+    assert(state.page == BUDDY_PAGE_INFO && state.info_page == 4);
+    assert(action.type != BUDDY_ACTION_LAN_SETUP);
+    buddy_state_reduce(&state, &click, 1100, &action);
+    assert(action.type == BUDDY_ACTION_LAN_SETUP);
+    state.lan_setup = true;
+    state.settings.sleep_mode = BUDDY_SLEEP_1_MIN;
+    buddy_event_t tick = {.type=BUDDY_EVENT_TICK};
+    buddy_state_reduce(&state, &tick, 120000, &action);
+    assert(!state.screen_off);
+    buddy_state_reduce(&state, &click, 120001, &action);
+    assert(action.type == BUDDY_ACTION_LAN_SETUP);
+}
+
 int main(void)
 {
+    test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();
     test_completion_sound_is_an_edge_not_a_replayed_snapshot();
     test_offline_initialization();

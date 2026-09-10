@@ -9,7 +9,9 @@ writes a final answer. The top-right status area also shows the battery level.
 
 Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
 
-Current firmware version: **0.1.0-idle-sleep**.
+Current branch firmware version: **0.2.0-lan**.
+
+**LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 
 The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it awake. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
 
@@ -95,6 +97,8 @@ verify pairing, both usage windows, reset countdowns, running/ready state, compl
 celebration, reconnect, battery display, and a sustained BLE connection.
 
 ## Acknowledgements
+
+The hotspot and `192.168.4.1` provisioning workflow was inspired by [leo0183/leo-radio](https://github.com/leo0183/leo-radio). Thank you for sharing the implementation. This project implements that workflow independently within its C firmware and memory budget.
 
 This project builds on [zt20/codex-usage-ai-passport](https://github.com/zt20/codex-usage-ai-passport). Thank you to **zt20** for open-sourcing the Codex usage firmware and bridge that made this companion possible.
 

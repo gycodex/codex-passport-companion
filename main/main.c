@@ -26,6 +26,8 @@
 #include "buddy_protocol.h"
 #include "buddy_settings.h"
 #include "buddy_state.h"
+#include "buddy_lan.h"
+#include "buddy_lan_filter.h"
 #include "buddy_ui.h"
 #include "buddy_alert.h"
 #include "buddy_sound.h"
@@ -108,6 +110,9 @@ typedef struct {
 } buddy_rx_slot_t;
 
 static const char *const TAG = "buddy_app";
+static QueueHandle_t s_lan_queue;
+static bool s_lan_mode;
+static bool s_lan_setup;
 static QueueHandle_t s_link_queue;
 static QueueHandle_t s_passkey_queue;
 static QueueHandle_t s_security_queue;
@@ -318,6 +323,16 @@ static void buddy_queue_rx_line(const buddy_ble_event_t *event)
         buddy_apply_rx_retry_counts(&retry);
         buddy_notify_app();
     }
+}
+
+static bool on_lan_receive(const char *json, size_t length, uint32_t generation)
+{
+    buddy_event_t event;
+    if (!atomic_load(&s_app_ready) || !buddy_lan_parse(json, length, &event)) return false;
+    event.ble.connection_generation = generation;
+    if (xQueueSend(s_lan_queue, &event, pdMS_TO_TICKS(500)) != pdTRUE) return false;
+    buddy_notify_app();
+    return true;
 }
 
 static void on_key(bsp_btn_t button, bsp_btn_ev_t event, void *context)
@@ -700,12 +715,16 @@ static esp_err_t buddy_set_ble_enabled(buddy_state_t *state, bool enabled)
 static esp_err_t buddy_factory_reset(buddy_state_t *state)
 {
     buddy_settings_snapshot_t defaults = {0};
+    if (buddy_lan_forget() != ESP_OK) return ESP_FAIL;
 
     if (buddy_settings_factory_reset() != ESP_OK) {
         buddy_copy_text(state->message, sizeof(state->message), "恢复出厂设置失败");
         return ESP_FAIL;
     }
+    if (s_lan_mode) esp_restart();
     defaults.ble_enabled = true;
+    defaults.sound_mode = BUDDY_SOUND_AUTO;
+    defaults.sleep_mode = BUDDY_SLEEP_5_MIN;
     buddy_default_name(defaults.name);
     if (buddy_settings_set_name(defaults.name) != ESP_OK ||
         buddy_settings_flush(true) != ESP_OK) {
@@ -786,6 +805,7 @@ static void buddy_orchestrator_record_permission(void *context,
 
 static esp_err_t buddy_orchestrator_unpair(void *context)
 {
+    if (s_lan_mode) return ESP_ERR_INVALID_STATE;
     buddy_state_t *state = context;
 
     if (buddy_ble_ensure_initialized() != ESP_OK || buddy_ble_delete_bonds() != ESP_OK) {
@@ -803,6 +823,12 @@ static esp_err_t buddy_orchestrator_factory_reset(void *context)
 
 static esp_err_t buddy_orchestrator_set_ble(void *context, bool enabled)
 {
+    if (s_lan_mode) {
+        buddy_state_t *state = context;
+        state->settings.ble_enabled = false;
+        buddy_copy_text(state->message, sizeof(state->message), "Use USB --disable for BLE");
+        return ESP_ERR_INVALID_STATE;
+    }
     return buddy_set_ble_enabled(context, enabled);
 }
 
@@ -848,6 +874,13 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
                                  buddy_event_t *result_event)
 {
     static bool applied_screen_off;
+    if (action->type == BUDDY_ACTION_LAN_SETUP) {
+        if (s_lan_setup || buddy_lan_request_setup() == ESP_OK) {
+            (void)buddy_settings_flush(true);
+            esp_restart();
+        }
+        return false;
+    }
     if (applied_screen_off != state->screen_off) {
         bsp_display_backlight(state->screen_off ? 0U : (20U + state->brightness_level * 20U));
         applied_screen_off = state->screen_off;
@@ -1005,6 +1038,14 @@ static void buddy_app_task(void *context)
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     buddy_state_init(&state, &s_initial_settings);
     buddy_sample_battery(&state);
+    state.lan_mode = s_lan_mode;
+    state.lan_setup = s_lan_setup;
+    if (s_lan_setup) {
+        buddy_lan_setup_password(state.lan_setup_password);
+        state.page = BUDDY_PAGE_INFO;
+        state.info_page = 4;
+    }
+    if (s_lan_mode) state.settings.ble_enabled = false;
 
     for (;;) {
         QueueHandle_t ready = buddy_wait_for_queue();
@@ -1013,9 +1054,24 @@ static void buddy_app_task(void *context)
 
         memset(&action, 0, sizeof(action));
 
-        if (ready == s_link_queue || ready == s_passkey_queue ||
+        if (s_lan_mode) {
+            bool connected = buddy_lan_connected();
+            if (state.lan_connected && !connected) {
+                buddy_event_t lost = {.type=BUDDY_EVENT_LAN_DISCONNECTED};
+                buddy_state_reduce(&state, &lost, now_ms, &action);
+            }
+            state.lan_connected = connected;
+            buddy_lan_ip(state.lan_ip);
+        }
+        if (s_lan_mode && ready == NULL && xQueueReceive(s_lan_queue, &event, 0) == pdTRUE) {
+            if (buddy_lan_connected() && event.ble.connection_generation == buddy_lan_generation()) {
+                buddy_state_reduce(&state, &event, now_ms, &action);
+                reduced = true;
+            }
+        }
+        if (!reduced && (ready == s_link_queue || ready == s_passkey_queue ||
             ready == s_security_queue || ready == s_bond_queue ||
-            ready == s_button_queue) {
+            ready == s_button_queue)) {
             buddy_control_event_t control;
 
             if (xQueueReceive(ready, &control, 0) == pdTRUE &&
@@ -1023,7 +1079,7 @@ static void buddy_app_task(void *context)
                 buddy_state_reduce(&state, &event, now_ms, &action);
                 reduced = true;
             }
-        } else if (ready == s_rx_priority_queue || ready == s_rx_normal_queue) {
+        } else if (!reduced && (ready == s_rx_priority_queue || ready == s_rx_normal_queue)) {
             buddy_rx_slot_t *slot = NULL;
 
             if (xQueueReceive(ready, &slot, 0) == pdTRUE && slot != NULL) {
@@ -1058,7 +1114,10 @@ static void buddy_app_task(void *context)
 
 static void buddy_screenshot_task(void *context)
 {
-    char request[64];
+    char request[1024];
+    size_t length = 0;
+    bool discarding = false;
+    uint64_t last_byte_ms = 0;
 
     (void)context;
     setvbuf(stdin, NULL, _IONBF, 0);
@@ -1067,16 +1126,38 @@ static void buddy_screenshot_task(void *context)
     usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_LF);
 
     for (;;) {
-        size_t length;
-
-        if (fgets(request, sizeof(request), stdin) == NULL) {
+        int byte = fgetc(stdin);
+        if (byte == EOF) {
             clearerr(stdin);
-            vTaskDelay(pdMS_TO_TICKS(50));
+            if ((length || discarding) && buddy_now_ms() - last_byte_ms > 5000U) {
+                memset(request, 0, sizeof(request));
+                length = 0;
+                discarding = false;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-        length = strcspn(request, "\r\n");
+        last_byte_ms = buddy_now_ms();
+        if (byte == '\r') continue;
+        if (byte != '\n') {
+            if (!discarding && length + 1U < sizeof(request)) request[length++] = (char)byte;
+            else discarding = true;
+            continue;
+        }
+        if (discarding) {
+            memset(request, 0, sizeof(request));
+            length = 0;
+            discarding = false;
+            continue;
+        }
         request[length] = '\0';
+        length = 0;
+        if (buddy_lan_usb_command(request)) {
+            memset(request, 0, sizeof(request));
+            continue;
+        }
         if (strcmp(request, "FAP_SCREENSHOT_V1") != 0) {
+            memset(request, 0, sizeof(request));
             continue;
         }
 
@@ -1089,6 +1170,7 @@ static void buddy_screenshot_task(void *context)
         }
         funlockfile(stdout);
         esp_log_level_set("*", previous_level);
+        memset(request, 0, sizeof(request));
     }
 }
 
@@ -1140,6 +1222,9 @@ void app_main(void)
         }
     }
 
+    s_lan_setup = buddy_lan_setup_requested();
+    s_lan_mode = s_lan_setup || buddy_lan_configured();
+    if (s_lan_mode) s_lan_queue = xQueueCreate(2, sizeof(buddy_event_t));
     s_link_queue = xQueueCreate(BUDDY_CRITICAL_QUEUE_DEPTH, sizeof(buddy_control_event_t));
     s_passkey_queue = xQueueCreate(BUDDY_CRITICAL_QUEUE_DEPTH,
                                    sizeof(buddy_control_event_t));
@@ -1151,7 +1236,7 @@ void app_main(void)
                                      sizeof(buddy_rx_slot_t *));
     s_rx_priority_queue = xQueueCreate(BUDDY_RX_PRIORITY_QUEUE_DEPTH,
                                        sizeof(buddy_rx_slot_t *));
-    if (s_link_queue == NULL || s_passkey_queue == NULL || s_security_queue == NULL ||
+    if ((s_lan_mode && s_lan_queue == NULL) || s_link_queue == NULL || s_passkey_queue == NULL || s_security_queue == NULL ||
         s_bond_queue == NULL || s_button_queue == NULL || s_rx_normal_queue == NULL ||
         s_rx_priority_queue == NULL ||
         xTaskCreate(buddy_app_task, "buddy_app", BUDDY_APP_STACK_SIZE, NULL,
@@ -1166,7 +1251,10 @@ void app_main(void)
     if (bsp_button_init(on_key, NULL) != ESP_OK) {
         ESP_LOGW(TAG, "button initialization failed; approvals remain fail-closed");
     }
-    if (s_initial_settings.ble_enabled) {
+    if (s_lan_mode) {
+        err = s_lan_setup ? buddy_lan_start_setup() : buddy_lan_start(on_lan_receive);
+        if (err != ESP_OK) ESP_LOGE(TAG, "LAN startup failed: %s", esp_err_to_name(err));
+    } else if (s_initial_settings.ble_enabled) {
         err = buddy_ble_ensure_initialized();
         if (err == ESP_OK) {
             err = buddy_ble_start();

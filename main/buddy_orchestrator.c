@@ -174,6 +174,7 @@ bool buddy_orchestrator_execute_action(buddy_state_t *state,
     case BUDDY_ACTION_UI_SCROLL:
     case BUDDY_ACTION_DISPLAY_BACKLIGHT:
     case BUDDY_ACTION_SCREEN_OFF:
+    case BUDDY_ACTION_LAN_SETUP: /* Performed by the device orchestration layer. */
         return true;
     }
     return false;

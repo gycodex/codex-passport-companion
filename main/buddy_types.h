@@ -110,6 +110,7 @@ typedef enum {
     BUDDY_EVENT_KEY_CLICK,
     BUDDY_EVENT_KEY_LONG,
     BUDDY_EVENT_TICK,
+    BUDDY_EVENT_LAN_DISCONNECTED,
 } buddy_event_type_t;
 
 typedef enum {
@@ -124,6 +125,7 @@ typedef enum {
     BUDDY_ACTION_UI_SCROLL,
     BUDDY_ACTION_DISPLAY_BACKLIGHT,
     BUDDY_ACTION_SCREEN_OFF,
+    BUDDY_ACTION_LAN_SETUP,
 } buddy_action_type_t;
 
 typedef enum {
@@ -302,6 +304,11 @@ typedef struct {
     bool approval_locked;
     buddy_permission_delivery_t permission_delivery;
     bool ble_connected;
+    bool lan_mode;
+    bool lan_setup;
+    char lan_setup_password[13];
+    bool lan_connected;
+    char lan_ip[16];
     bool ble_encrypted;
     bool ble_enabled;
     bool battery_available;

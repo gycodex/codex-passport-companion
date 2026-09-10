@@ -8,7 +8,9 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 窗口名称按实际分钟数生成；没有返回的窗口不会显示，也不会被当作剩余 100%。
 
-当前固件版本：**0.1.0-idle-sleep**。
+当前分支固件版本：**0.2.0-lan**。
+
+**局域网连接分支：**新增加密 Wi‑Fi 传输，无蓝牙的台式机也可使用。支持手机连接设备热点，在网页中扫描、填写 Wi‑Fi 并下载配对文件；也可通过 USB 配网。保留蓝牙模式。详见 [局域网配网与使用说明](docs/LAN.md)。
 
 实现基于仓库的 `demo/claude-buddy-port` 参考分支，保留了有界状态机、像素 UI、
 加密 Nordic UART BLE、绑定与自动重连。新增的本机桥接器负责把 Codex 数据转换成
@@ -88,6 +90,8 @@ python3 -m unittest tests/test_codex_bridge.py
 运行/就绪状态、完成庆祝提示、断线重连、电池显示和 BLE 长连接稳定性。
 
 ## 致谢
+
+配网交互参考了 [leo0183/leo-radio](https://github.com/leo0183/leo-radio) 的设备热点与 `192.168.4.1` 网页配网流程，感谢作者公开实现。本项目按现有 C 固件和内存预算独立实现该流程，未移植电台功能。
 
 本项目基于 [zt20/codex-usage-ai-passport](https://github.com/zt20/codex-usage-ai-passport) 二次开发。感谢原作者 **zt20** 开源 Codex 用量显示固件及桥接程序，为这个桌面伙伴提供了基础。
 

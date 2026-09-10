@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 import asyncio
 import json
 import os
@@ -427,6 +428,9 @@ def heartbeat_payload(
 
 
 async def send_payload(client: Any, payload: bytes) -> None:
+    if hasattr(client, "send_payload"):
+        await client.send_payload(payload)
+        return
     characteristic = client.services.get_characteristic(NUS_RX_UUID)
     if characteristic is None:
         raise RuntimeError("Codex Buddy RX characteristic is missing")
@@ -448,6 +452,23 @@ async def find_device(device_name: str | None) -> Any:
         if not device_name and (device.name or "").startswith("Codex-"):
             return device
     raise RuntimeError("No Codex-* AI Passport found")
+
+
+@asynccontextmanager
+async def open_transport(args):
+    if args.lan:
+        from lan_transport import LanClient, load_key
+        print(f"Connecting to LAN device {args.lan}:{args.lan_port}…", flush=True)
+        async with LanClient(args.lan, load_key(args.lan_key_file), args.lan_port) as client:
+            yield client
+    else:
+        from bleak import BleakClient
+        device = await find_device(args.device)
+        print(f"Connecting to {device.name or device.address}…", flush=True)
+        options = {"winrt": {"use_cached_services": True}} if sys.platform == "win32" else {}
+        async with BleakClient(device, pair=True, timeout=60.0, **options) as client:
+            await client.start_notify(NUS_TX_UUID, lambda _sender, _data: None)
+            yield client
 
 
 async def bridge_loop(args: argparse.Namespace) -> None:
@@ -491,17 +512,9 @@ async def bridge_loop(args: argparse.Namespace) -> None:
         if args.dry_run:
             print(heartbeat_payload(usage, watcher, running_count).decode().rstrip())
             return
-        from bleak import BleakClient
-
         while True:
             try:
-                device = await find_device(args.device)
-                print(f"Connecting to {device.name or device.address}…", flush=True)
-                # The fixed NUS service layout can use Windows' GATT cache.
-                # Re-enumerating it on rapid reconnects can cancel WinRT requests.
-                options = {"winrt": {"use_cached_services": True}} if sys.platform == "win32" else {}
-                async with BleakClient(device, pair=True, timeout=60.0, **options) as client:
-                    await client.start_notify(NUS_TX_UUID, lambda _sender, _data: None)
+                async with open_transport(args) as client:
                     print("Connected. Codex usage and completion alerts are live.", flush=True)
                     timezone_offset = int(
                         time.mktime(time.localtime()) - time.mktime(time.gmtime())
@@ -571,7 +584,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Show Codex usage and task-completion alerts on FoloToy AI Passport"
     )
-    parser.add_argument("--device", help="exact BLE device name or address")
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument("--device", help="exact BLE device name or address")
+    transport.add_argument("--lan", metavar="IP", help="connect over encrypted local Wi-Fi")
+    parser.add_argument("--lan-port", type=int, default=8765)
+    parser.add_argument("--lan-key-file", default=str(Path.home()/".codex"/"passport-lan.json"))
     parser.add_argument("--codex", default="codex", help="path to the Codex CLI executable")
     parser.add_argument(
         "--dry-run", action="store_true", help="print one sanitized payload without using BLE"

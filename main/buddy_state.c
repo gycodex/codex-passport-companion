@@ -230,6 +230,10 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
         }
         break;
     case BUDDY_SETTINGS_WIFI:
+        state->page = BUDDY_PAGE_INFO;
+        state->info_page = 4;
+        buddy_set_ui_refresh(action);
+        break;
     case BUDDY_SETTINGS_LED:
     case BUDDY_SETTINGS_CLOCK_ROTATION:
         buddy_copy(state->message, sizeof(state->message), "此硬件暂不支持该功能");
@@ -296,7 +300,9 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
         buddy_set_ui_refresh(action);
         return;
     }
-    if (state->page == BUDDY_PAGE_SETTINGS) {
+    if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_INFO && state->info_page == 4) {
+        if (action != NULL) action->type = BUDDY_ACTION_LAN_SETUP;
+    } else if (state->page == BUDDY_PAGE_SETTINGS) {
         buddy_settings_click(state, key, action);
     } else if (key == BUDDY_KEY_UP) {
         state->page = state->page == BUDDY_PAGE_HOME
@@ -690,6 +696,14 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
             buddy_set_ui_refresh(action);
         }
         break;
+    case BUDDY_EVENT_LAN_DISCONNECTED:
+        state->lan_connected = false;
+        state->connected = false;
+        state->heartbeat_stale = true;
+        buddy_clear_logical_session(state);
+        state->connection = BUDDY_CONNECTION_OFFLINE;
+        buddy_set_ui_refresh(action);
+        break;
     case BUDDY_EVENT_TICK:
         buddy_set_ui_refresh(action);
         break;
@@ -702,7 +716,7 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
     bool working = state->connected && !state->heartbeat_stale &&
                    (state->running > 0U || state->waiting > 0U);
     if (attention) state->screen_off = false;
-    if (working || attention) {
+    if (working || attention || state->lan_setup) {
         state->last_activity_ms = now_ms;
     } else {
         static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
@@ -755,6 +769,11 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     snapshot->approval_locked = state->approval_locked;
     snapshot->permission_delivery = state->permission_delivery;
     snapshot->ble_connected = state->ble_connected;
+    snapshot->lan_mode = state->lan_mode;
+    snapshot->lan_setup = state->lan_setup;
+    memcpy(snapshot->lan_setup_password, state->lan_setup_password, sizeof(snapshot->lan_setup_password));
+    snapshot->lan_connected = state->lan_connected;
+    memcpy(snapshot->lan_ip, state->lan_ip, sizeof(snapshot->lan_ip));
     snapshot->ble_encrypted = state->ble_encrypted;
     snapshot->ble_enabled = state->settings.ble_enabled;
     snapshot->battery_available = state->battery_available;

@@ -52,6 +52,11 @@ typedef struct {
     buddy_permission_delivery_t permission_delivery;
     bool approval_locked;
     bool ble_connected;
+    bool lan_mode;
+    bool lan_setup;
+    char lan_setup_password[13];
+    bool lan_connected;
+    char lan_ip[16];
     bool ble_encrypted;
     bool battery_available;
     bool passkey_visible;

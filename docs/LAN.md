@@ -1,0 +1,83 @@
+# 局域网连接（feature/lan-connection）
+
+此分支支持通过 Wi‑Fi 同步 Codex 用量与任务状态。设备连接 **2.4 GHz** Wi‑Fi；电脑可以通过同一路由器的网线或 Wi‑Fi 连接，无需蓝牙。宠物、任务完成提示音和自动息屏继续生效。
+
+## 手机热点配网（推荐）
+
+1. 设备长按确认键打开菜单，进入 **设置 → 无线网络**，再按确认键进入配网。设备会重启，暂时停止蓝牙。
+2. 手机连接 **Passport Setup** 热点，密码显示在设备屏幕上，每次进入配网都会重新生成。手机提示无互联网时，选择继续使用这个网络。
+3. 浏览器手动打开 **http://192.168.4.1**。点击扫描并选择 2.4 GHz 网络，也可以手动输入隐藏网络名称；填写密码并保存。此时只是保存，还没有连接路由器。
+4. 点击 **下载 passport-lan.json**，确认文件已保存，再点 **已保存文件，连接 Wi-Fi**。手机配网时，把下载的文件传到台式机。
+5. 设备重启，热点关闭。在 **设置 → 无线网络** 查看路由器分配的 IP。在电脑安装 `tools/requirements-lan.txt`，运行：
+
+   ```powershell
+   python tools/codex_bridge.py --lan 192.168.1.50 --lan-key-file "C:\path\passport-lan.json"
+   ```
+
+热点只在主动配网时开启，10 分钟后自动关闭；设备配网页按确认键也可立即退出。未保存时保留原网络和连接模式；保存后退出会尝试连接新网络。若一直显示 `Connecting...`，重新进入配网检查密码。换 Wi-Fi 会保留已有配对密钥，电脑无需重新配对。
+
+本版参考 [leo0183/leo-radio](https://github.com/leo0183/leo-radio) 的热点网页流程。支持扫描、手动输入和下载配对文件；暂未移植设备按键输入密码、多网络列表或自动弹出认证页。短暂断网时继续重连，不自动开放配网热点。
+
+也可通过 USB 打开热点：`python tools/configure_lan.py --port COM3 --setup`。
+
+## USB 配网（备选）
+
+1. 刷入本分支的应用固件，通过 USB 数据线连接设备。应用镜像仅写入 `0x10000`。
+2. 安装本机依赖：
+
+   ```powershell
+   python -m pip install -r tools/requirements-lan.txt
+   ```
+
+3. 运行配网工具（把 COM3 换成实际端口）：
+
+   ```powershell
+   python tools/configure_lan.py --port COM3
+   ```
+
+   在本机输入 Wi‑Fi 名称和密码。密码隐藏输入；无密码网络可直接回车。支持普通开放网络和 WPA2/WPA3-Personal，不支持需要网页登录的网络或企业认证。Wi‑Fi 密码只保存到设备的 NVS，不保存到电脑配置文件，不上传 GitHub。
+
+4. 设备重启后，在 **设置 → 无线网络** 查看 IP。也可通过 USB 查询：
+
+   ```powershell
+   python tools/configure_lan.py --port COM3 --status
+   ```
+
+5. 用设备 IP 启动桥接：
+
+   ```powershell
+   python tools/codex_bridge.py --lan 192.168.1.50
+   ```
+
+   电脑需安装并登录 Codex CLI。必要时用 `--codex` 指定实际 Codex 可执行文件。Windows 的 npm 安装可指定其 vendor 目录内的 `codex.exe`。
+
+之后设备只需供电，USB 无需连接电脑。桥接自动重试断线，每 10 秒发送心跳。设备 IP 由路由器分配；建议在路由器设置 DHCP 地址保留，避免重启后地址改变。访客网络的客户端隔离可能阻止电脑连接设备。
+
+## 配对文件与换电脑
+
+配网工具在本机 `~/.codex/passport-lan.json` 保存随机生成的配对密钥，文件不包含 Wi‑Fi 密码或 Codex 登录凭据。换电脑时可自行把这个文件复制到新电脑同一位置，或用 `--lan-key-file` 指定它。也可以重新 USB 配网，生成新密钥；旧密钥随之失效。不要提交或公开配对文件。
+
+## 切回蓝牙
+
+```powershell
+python tools/configure_lan.py --port COM3 --disable
+```
+
+这会清除设备上的 Wi‑Fi 信息和局域网密钥并重启，恢复蓝牙模式。未配网时也默认使用蓝牙；必要时在设备设置中开启蓝牙。恢复出厂设置同样清除局域网配置。
+
+## 实现与验证范围
+
+- ESP32-C3 内存有限，因此每次启动只运行 LAN 或 BLE 中的一种传输。功能均保留，可经 USB 切换，不同时运行两个无线协议栈。
+- Wi‑Fi 高速 IRAM 优化关闭，收发缓冲数量按低频同步需求收紧；网络帧缓冲仅在 LAN 模式分配，该模式同时释放未使用的蓝牙控制器预留内存。
+- 设备监听 TCP 8765，仅接受一个桥接客户端。握手使用双方随机挑战和 HMAC-SHA256 验证，派生会话 nonce；随后使用 AES-256-GCM 加密、递增序号及分离的双向 nonce 防止篡改与重放。不需要互联网服务器或端口转发。
+- LAN 只接受 Codex 用量心跳和时间同步，不提供远程审批、设备改名、解绑或配置指令。配网通过物理 USB，或主动进入的独立热点模式。
+- 配网热点使用随机 WPA2 密码；网页接口校验会话令牌。配网期间不连接路由器、不启动 BLE 或 LAN 服务；正常使用时不启动网页服务。配对文件只通过该临时热点下载，文件不包含 Wi-Fi 密码。网页资源均来自设备本身。
+- 有界消息缓冲区、超时及连接代次检查限制无效请求；UI 修改仍在应用任务内执行。
+- 主机测试覆盖消息白名单、加密校验、错误密钥、篡改、重放、消息长度、TCP 分片与重连。USB 状态中的 `crypto_ok` 是设备 mbedTLS 与 Python AES-GCM 测试向量的互通自检。
+- 2026-09-10 验证：14 项 C 主机测试、15 项 Python 测试通过；ESP-IDF 5.5.3 构建通过。实机验证热点启动、主动退出、USB 分片和无效配置拒绝；热点空闲堆约 41 KB，退出后 BLE 空闲堆约 33 KB。浏览器使用模拟接口验证了手机布局、密码校验、保存/下载/重启流程。
+- 尚未完成手机连接真实热点后的 HTTP 操作与目标路由器联调；浏览器模拟测试不替代真实无线配网测试。长时间浸泡及 20 次重连测试未运行。
+- 实际目标 Wi‑Fi 配网、LAN 无线同步、提示音并发时的空闲堆及断线重连，需要用户完成本机配网后实测。构建或主机测试通过不等于这些实机检查已通过。
+
+## English quick start
+
+Open Settings → Wi-Fi on the Passport and press OK. Join the password-protected `Passport Setup` hotspot with your phone, open `http://192.168.4.1`, save the network, download the pairing JSON and restart. Transfer the JSON to the computer and run `python tools/codex_bridge.py --lan DEVICE_IP --lan-key-file PATH_TO_JSON`. Install `tools/requirements-lan.txt` first. Alternatively use `python tools/configure_lan.py --port COM3` over USB, which stores the key in `~/.codex/passport-lan.json`. Use `--disable` over USB to forget LAN settings and return to BLE mode. Wi-Fi credentials stay on the device. This branch uses one wireless transport at a time and retains the pet, chime and idle-sleep features.

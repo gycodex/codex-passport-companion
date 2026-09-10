@@ -9,4 +9,6 @@ dependencies.lock
 .venv-bridge/
 __pycache__/
 *.pyc
+passport-lan*.json*
+*.local.json
 dist/
