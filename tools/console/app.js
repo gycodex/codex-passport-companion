@@ -15,10 +15,10 @@ const messages = {
 function localize(message) {
   if (messages[message]) return messages[message];
   if (statusLabels[message]) return statusLabels[message];
-  if (/TimeoutError/.test(message)) return '连接超时，请检查设备、网络或是否有其他电脑占用连接';
   if (/FileNotFoundError/.test(message)) return '未检测到 Codex，请先安装并登录 Codex CLI，然后重新连接；特殊安装位置可在高级设置中手动指定';
   if (/Usage refresh failed/.test(message)) return '用量刷新失败，稍后自动重试';
   if (/Task refresh failed/.test(message)) return '任务状态刷新失败，稍后自动重试';
+  if (/TimeoutError/.test(message)) return '连接超时，请检查设备、网络或是否有其他电脑占用连接';
   if (/check device, network and Codex login/.test(message)) return '连接异常，请检查设备、网络和 Codex 登录状态';
   if (/operation failed/.test(message)) return '操作失败，请检查设备连接及系统权限后重试';
   if (/JSON|Unexpected token|Unexpected end|non-hexadecimal/.test(message)) return '文件或请求格式不正确，请使用有效的配对 JSON 文件';

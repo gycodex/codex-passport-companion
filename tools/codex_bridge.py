@@ -42,6 +42,8 @@ class CodexAppServer:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            # Task-list responses can exceed asyncio's default 64 KiB line limit.
+            limit=4 * 1024 * 1024,
             **({"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}),
         )
         self.reader_task = asyncio.create_task(self._read_stdout())

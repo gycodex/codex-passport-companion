@@ -1,8 +1,10 @@
 import asyncio
 import importlib.util
+import sys
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).parents[1] / "tools" / "codex_bridge.py"
@@ -13,6 +15,32 @@ SPEC.loader.exec_module(codex_bridge)
 
 
 class CodexBridgeTests(unittest.TestCase):
+    def test_app_server_reads_large_jsonl_response(self) -> None:
+        script = (
+            "import json, sys\n"
+            "for line in sys.stdin:\n"
+            "    request = json.loads(line)\n"
+            "    if 'id' in request:\n"
+            "        print(json.dumps({'id': request['id'], "
+            "'result': {'metadata': 'x' * 100000}}), flush=True)\n"
+        )
+        create_process = asyncio.create_subprocess_exec
+
+        async def fake_server(*args, **kwargs):
+            return await create_process(sys.executable, "-u", "-c", script, **kwargs)
+
+        async def check():
+            server = codex_bridge.CodexAppServer()
+            try:
+                await server.start()
+                result = await server.request("thread/list")
+                self.assertEqual(len(result["metadata"]), 100000)
+            finally:
+                await server.close()
+
+        with patch.object(codex_bridge.asyncio, "create_subprocess_exec", fake_server):
+            asyncio.run(check())
+
     def test_lan_adapter_removes_only_the_ble_line_terminator(self) -> None:
         received = []
         class Client:
