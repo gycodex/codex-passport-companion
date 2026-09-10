@@ -1,4 +1,5 @@
 #include "buddy_lan.h"
+#include "buddy_voice.h"
 #include "buddy_sound.h"
 #include <stdio.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 #include "esp_log.h"
 #include "nvs.h"
 #include "lwip/sockets.h"
+#include "lwip/tcp.h"
 #include "mbedtls/gcm.h"
 #include "mbedtls/md.h"
 #include "cJSON.h"
@@ -278,9 +280,21 @@ static void serve(int client, lan_buffers_t *buffers)
             struct timeval timeout = {.tv_sec=35};
             setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
         }
-        bool accepted = s_receive((const char *)buffers->plaintext, size-16, generation);
-        const char *reply = accepted ? "{\"ok\":true}" : "{\"ok\":false}";
-        size_t reply_size = strlen(reply);
+        const char *reply;
+        size_t reply_size;
+        if (size - 16 == 16 && memcmp(buffers->plaintext, "{\"voice\":\"poll\"}", 16) == 0) {
+            reply = (const char *)buffers->plaintext;
+            reply_size = buddy_voice_poll((char *)buffers->plaintext, sizeof(buffers->plaintext));
+            if (!reply_size) break;
+        } else {
+            bool accepted;
+            if (size - 16 == 16 && memcmp(buffers->plaintext, "{\"voice\":\"stop\"}", 16) == 0) {
+                buddy_voice_disconnect();
+                accepted = true;
+            } else accepted = s_receive((const char *)buffers->plaintext, size-16, generation);
+            reply = accepted ? "{\"ok\":true}" : "{\"ok\":false}";
+            reply_size = strlen(reply);
+        }
         make_nonce(challenge, sequence | 0x80000000U, nonce);
         if (mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT, reply_size, nonce, 12,
                 (const uint8_t *)"FAP-LAN-1:S", 11, (const uint8_t *)reply, buffers->ciphertext, 16, tag) != 0) break;
@@ -292,6 +306,7 @@ static void serve(int client, lan_buffers_t *buffers)
         if (!send_all(client, buffers->line, wire_size)) break;
     }
 done:
+    buddy_voice_disconnect();
     atomic_store(&s_authenticated, false);
     mbedtls_gcm_free(&gcm);
     memset(buffers->plaintext, 0, sizeof(buffers->plaintext));
@@ -312,6 +327,8 @@ static void server_task(void *arg)
             while (atomic_load(&s_up)) {
                 int client = accept(listener, NULL, NULL);
                 if (client < 0) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
+                int no_delay = 1;
+                setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay));
                 timeout.tv_sec = 5;
                 setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
                 timeout.tv_sec = 3;

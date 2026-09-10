@@ -49,6 +49,7 @@ class LanClient:
         self.writer = None
         self.is_connected = False
         self.sequence = 0
+        self.request_lock = asyncio.Lock()
 
     async def __aenter__(self):
         try:
@@ -74,18 +75,27 @@ class LanClient:
             await self.__aexit__(None, None, None)
             raise
 
+    async def request(self, payload: bytes):
+        async with self.request_lock:
+            if not self.is_connected:
+                raise ConnectionError("LAN connection is closed")
+            self.sequence += 1
+            try:
+                self.writer.write(seal(self.key, self.challenge, self.sequence, payload))
+                await asyncio.wait_for(self.writer.drain(), 5)
+                frame = await asyncio.wait_for(self.reader.readline(), 5)
+                response = json.loads(unseal(self.key, self.challenge, self.sequence, frame, True))
+                if not isinstance(response, dict):
+                    raise ValueError("Invalid LAN response")
+                return response
+            except BaseException:
+                self.is_connected = False
+                raise
+
     async def send_payload(self, payload: bytes):
-        self.sequence += 1
-        try:
-            self.writer.write(seal(self.key, self.challenge, self.sequence, payload))
-            await asyncio.wait_for(self.writer.drain(), 5)
-            frame = await asyncio.wait_for(self.reader.readline(), 5)
-            response = json.loads(unseal(self.key, self.challenge, self.sequence, frame, True))
-            if response != {"ok": True}:
-                raise ValueError("Device rejected LAN payload")
-        except BaseException:
+        if await self.request(payload) != {"ok": True}:
             self.is_connected = False
-            raise
+            raise ValueError("Device rejected LAN payload")
 
     async def __aexit__(self, *_):
         self.is_connected = False

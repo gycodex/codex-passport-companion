@@ -13,6 +13,8 @@ Current branch firmware version: **0.2.0-lan**.
 
 The first live Codex heartbeat after connecting or reconnecting over BLE/LAN plays a short 100 ms connection note. Routine heartbeats stay quiet. The note follows the existing sound mode and automatic quiet hours.
 
+**Microphone / speech input:** new firmware and console support physical-button LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). Bluetooth audio is not implemented.
+
 **Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. No firmware update is required for the panel. See [setup and validation notes](docs/CONSOLE.md).
 
 **LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
@@ -101,6 +103,8 @@ verify pairing, both usage windows, reset countdowns, running/ready state, compl
 celebration, reconnect, battery display, and a sustained BLE connection.
 
 ## Acknowledgements
+
+The microphone-to-input-method workflow was inspired by [xiabill/ai-passport](https://github.com/xiabill/ai-passport). Thank you for sharing the device audio and Mac bridge design.
 
 The hotspot and `192.168.4.1` provisioning workflow was inspired by [leo0183/leo-radio](https://github.com/leo0183/leo-radio). Thank you for sharing the implementation. This project implements that workflow independently within its C firmware and memory budget.
 

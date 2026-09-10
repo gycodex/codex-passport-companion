@@ -13,6 +13,8 @@ idf_component_register(
         "buddy_usage.c"
         "buddy_alert.c"
         "buddy_sound.c"
+        "buddy_voice.c"
+        "buddy_adpcm.c"
         "buddy_lan.c"
         "buddy_lan_filter.c"
         "buddy_font_zh_14.c"

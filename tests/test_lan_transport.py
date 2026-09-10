@@ -90,8 +90,8 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             port = server.sockets[0].getsockname()[1]
             for _ in range(2):
                 async with LanClient('127.0.0.1', KEY, port) as client:
-                    await client.send_payload(b'{"time":[1,0]}')
-                    await client.send_payload(b'{"time":[2,0]}')
+                    await asyncio.gather(client.send_payload(b'{"time":[1,0]}'),
+                                         client.send_payload(b'{"time":[2,0]}'))
                 self.assertFalse(client.is_connected)
         self.assertEqual(len(received), 4)
 

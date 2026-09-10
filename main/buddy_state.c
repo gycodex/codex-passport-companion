@@ -292,15 +292,17 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
             } else if (state->menu_selection == BUDDY_MENU_ABOUT) {
                 state->page = BUDDY_PAGE_INFO;
                 state->info_page = 5;
-            } else if (state->menu_selection == BUDDY_MENU_DEMO) {
-                buddy_copy(state->message, sizeof(state->message), "演示功能暂不可用");
+            } else if (state->menu_selection == BUDDY_MENU_VOICE) {
+                state->page = BUDDY_PAGE_VOICE;
             }
             state->menu_open = false;
         }
         buddy_set_ui_refresh(action);
         return;
     }
-    if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_INFO && state->info_page == 4) {
+    if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_VOICE) {
+        if (action != NULL) action->voice_toggle = true;
+    } else if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_INFO && state->info_page == 4) {
         if (action != NULL) action->type = BUDDY_ACTION_LAN_SETUP;
     } else if (state->page == BUDDY_PAGE_SETTINGS) {
         buddy_settings_click(state, key, action);
@@ -741,7 +743,7 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
     uint64_t delay = delays[mode];
     bool expired = delay != 0U && now_ms >= state->last_activity_ms &&
                    now_ms - state->last_activity_ms >= delay;
-    if (attention || state->lan_setup) {
+    if (attention || state->lan_setup || state->voice_recording) {
         state->screen_off = false;
         state->screen_dimmed = false;
         state->last_activity_ms = now_ms;

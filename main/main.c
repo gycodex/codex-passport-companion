@@ -31,6 +31,8 @@
 #include "buddy_ui.h"
 #include "buddy_alert.h"
 #include "buddy_sound.h"
+#include "buddy_voice.h"
+#include "esp_wifi.h"
 
 #define BUDDY_CRITICAL_QUEUE_DEPTH 1U
 #define BUDDY_BUTTON_QUEUE_DEPTH 4U
@@ -874,6 +876,22 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
                                  buddy_event_t *result_event)
 {
     static int applied_brightness = -1;
+    static bool voice_wifi_awake;
+    static wifi_ps_type_t previous_wifi_ps;
+    if (state->page != BUDDY_PAGE_VOICE || state->menu_open || state->prompt.id[0] ||
+        state->confirmation_pending || state->passkey_visible || !buddy_lan_connected()) buddy_voice_stop();
+    else if (action->voice_toggle && buddy_voice_toggle()) {
+        if (!voice_wifi_awake && esp_wifi_get_ps(&previous_wifi_ps) == ESP_OK) {
+            voice_wifi_awake = esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK;
+        }
+        buddy_sound_voice_wake();
+    }
+    state->voice_recording = buddy_voice_recording();
+    if (!state->voice_recording && voice_wifi_awake) {
+        (void)esp_wifi_set_ps(previous_wifi_ps);
+        voice_wifi_awake = false;
+    }
+    if (state->voice_recording) { state->screen_off = false; state->screen_dimmed = false; }
     if (action->type == BUDDY_ACTION_LAN_SETUP) {
         if (s_lan_setup || buddy_lan_request_setup() == ESP_OK) {
             (void)buddy_settings_flush(true);
@@ -980,6 +998,12 @@ static void buddy_render(buddy_state_t *state, const buddy_action_t *action, uin
     if (s_lan_mode) last_lan_render_ms = now_ms;
 
     buddy_state_snapshot(state, &snapshot);
+    buddy_voice_status_t voice;
+    buddy_voice_status(&voice);
+    snapshot.voice_ready = voice.ready;
+    snapshot.voice_recording = voice.recording;
+    snapshot.voice_seconds = voice.seconds;
+    snapshot.voice_peak = voice.peak;
     if (!bsp_lvgl_lock(1000)) {
         return;
     }

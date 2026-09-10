@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.16)
 project(buddy_host_tests C)
 
 enable_testing()
+add_executable(test_buddy_adpcm test_buddy_adpcm.c ../main/buddy_adpcm.c)
+target_include_directories(test_buddy_adpcm PRIVATE ../main)
+target_compile_options(test_buddy_adpcm PRIVATE -Wall -Wextra -Werror)
+add_test(NAME buddy_adpcm COMMAND test_buddy_adpcm)
 
 add_executable(test_buddy_alert test_buddy_alert.c ../main/buddy_alert.c)
 target_include_directories(test_buddy_alert PRIVATE ../main)

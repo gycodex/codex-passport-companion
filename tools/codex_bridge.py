@@ -546,60 +546,62 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                     # Establish the session baseline before enabling test alerts.
                     await send_payload(client, heartbeat_payload(usage, watcher, running_count))
                     report("connected", usage=usage, running=running_count, synced_at=time.time())
-                    while client.is_connected:
-                        changed = watcher.poll()
-                        if control is not None and control.take_test():
-                            watcher.completion_sequence += 1
-                            watcher._save_sequence()
-                            changed = True
-                        completed = watcher.completion_sequence > previous_sequence
-                        previous_sequence = watcher.completion_sequence
-                        now = time.monotonic()
-                        if roll_expired_usage_windows(usage):
-                            save_cached_usage(usage_cache_path, usage)
-                            changed = True
-                        if now - last_usage >= USAGE_REFRESH_SECONDS:
-                            try:
-                                refreshed_usage = await app_server.rate_limits()
-                                if refreshed_usage.get("available"):
-                                    usage = refreshed_usage
-                                    roll_expired_usage_windows(usage)
-                                    save_cached_usage(usage_cache_path, usage)
-                            except Exception as error:
-                                report("warning", message=f"Usage refresh failed: {type(error).__name__}; will retry")
-                                print(
-                                    f"Codex usage refresh failed: {error}. Will retry…",
-                                    file=sys.stderr,
-                                    flush=True,
+                    from voice_bridge import voice_session
+                    async with voice_session(client, control):
+                        while client.is_connected:
+                            changed = watcher.poll()
+                            if control is not None and control.take_test():
+                                watcher.completion_sequence += 1
+                                watcher._save_sequence()
+                                changed = True
+                            completed = watcher.completion_sequence > previous_sequence
+                            previous_sequence = watcher.completion_sequence
+                            now = time.monotonic()
+                            if roll_expired_usage_windows(usage):
+                                save_cached_usage(usage_cache_path, usage)
+                                changed = True
+                            if now - last_usage >= USAGE_REFRESH_SECONDS:
+                                try:
+                                    refreshed_usage = await app_server.rate_limits()
+                                    if refreshed_usage.get("available"):
+                                        usage = refreshed_usage
+                                        roll_expired_usage_windows(usage)
+                                        save_cached_usage(usage_cache_path, usage)
+                                except Exception as error:
+                                    report("warning", message=f"Usage refresh failed: {type(error).__name__}; will retry")
+                                    print(
+                                        f"Codex usage refresh failed: {error}. Will retry…",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                last_usage = now
+                                changed = True
+                            if now - last_task_refresh >= TASK_REFRESH_SECONDS:
+                                try:
+                                    refreshed_count = await app_server.running_task_count()
+                                    refreshed_count = max(
+                                        refreshed_count, watcher.running_count
+                                    )
+                                    changed = changed or refreshed_count != running_count
+                                    running_count = refreshed_count
+                                except Exception as error:
+                                    report("warning", message=f"Task refresh failed: {type(error).__name__}; will retry")
+                                    print(
+                                        f"Codex task-count refresh failed: {error}. Will retry…",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                last_task_refresh = now
+                            if changed or now - last_heartbeat >= HEARTBEAT_SECONDS:
+                                await send_payload(
+                                    client,
+                                    heartbeat_payload(usage, watcher, running_count, completed),
                                 )
-                            last_usage = now
-                            changed = True
-                        if now - last_task_refresh >= TASK_REFRESH_SECONDS:
-                            try:
-                                refreshed_count = await app_server.running_task_count()
-                                refreshed_count = max(
-                                    refreshed_count, watcher.running_count
-                                )
-                                changed = changed or refreshed_count != running_count
-                                running_count = refreshed_count
-                            except Exception as error:
-                                report("warning", message=f"Task refresh failed: {type(error).__name__}; will retry")
-                                print(
-                                    f"Codex task-count refresh failed: {error}. Will retry…",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                            last_task_refresh = now
-                        if changed or now - last_heartbeat >= HEARTBEAT_SECONDS:
-                            await send_payload(
-                                client,
-                                heartbeat_payload(usage, watcher, running_count, completed),
-                            )
-                            last_heartbeat = now
-                            report("synced", usage=usage, running=running_count, synced_at=time.time())
-                            if completed:
-                                report("completion", message="Completion sent; sound follows device volume and quiet hours")
-                        await asyncio.sleep(1.0)
+                                last_heartbeat = now
+                                report("synced", usage=usage, running=running_count, synced_at=time.time())
+                                if completed:
+                                    report("completion", message="Completion sent; sound follows device volume and quiet hours")
+                            await asyncio.sleep(1.0)
             except Exception as error:  # BLE backend errors vary by operating system.
                 report("retrying", message=f"{type(error).__name__}: {error}" or "连接中断")
                 print(f"Bridge disconnected: {error}. Retrying…", file=sys.stderr, flush=True)

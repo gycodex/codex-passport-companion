@@ -310,7 +310,7 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s,
     buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, compact ? 208 : 188);
     if (!(s->ble_connected || s->lan_connected) || s->heartbeat_stale) {
         caption = "等待同步";
-    } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
+    } else if (!s->voice_recording && s->character == BUDDY_CHARACTER_CELEBRATE) {
         caption = "任务完成";
         color = COL_GREEN;
     } else if (s->running > 0U) {
@@ -486,7 +486,7 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
         panel(layer, 154, 158, s->approval_locked ? COL_DIM : COL_RED, "助手请求授权", body,
               s->approval_locked ? (s->permission_delivery == BUDDY_PERMISSION_DELIVERY_FAILED ? "发送失败" : "正在发送……") : BUDDY_ACTION_APPROVAL);
     } else if (overlay == BUDDY_OVERLAY_MENU) {
-        static const char *const menu[] = {"设置", "关闭屏幕", "帮助", "关于", "演示", "关闭菜单"};
+        static const char *const menu[] = {"设置", "关闭屏幕", "帮助", "关于", "语音输入", "关闭菜单"};
         unsigned i;
         box(layer, 38, 48, 164, 224, lv_color_hex(0x151719), COL_INK, 2, 5);
         text(layer, 52, 61, 136, COL_ORANGE, "菜单", true, LV_TEXT_ALIGN_CENTER);
@@ -497,7 +497,7 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
             if (active) box(layer, 48, y - 7, 144, 21, COL_ORANGE, COL_ORANGE, 0, 2);
             text(layer, 56, y, 128, active ? COL_BG : COL_INK, menu[i], false, LV_TEXT_ALIGN_CENTER);
         }
-    } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
+    } else if (!s->voice_recording && s->character == BUDDY_CHARACTER_CELEBRATE) {
         buddy_usage_window_t windows[2];
         /* The single-window home already celebrates through its pet and caption. */
         if (s->page != BUDDY_PAGE_HOME || buddy_usage_windows(&s->codex_usage, windows) != 1U) {
@@ -505,6 +505,23 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
                   "助手已完成当前任务。", "请在电脑上查看结果");
         }
     }
+}
+
+static void draw_voice(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
+{
+    char elapsed[32];
+    text(layer, 12, 45, 216, COL_ORANGE, "语音输入", true, LV_TEXT_ALIGN_CENTER);
+    text(layer, 12, 85, 216, s->voice_recording ? COL_RED : COL_GREEN,
+         s->voice_recording ? "正在录音" : (s->voice_ready ? "麦克风已就绪" : "请开启电脑语音桥接"), false, LV_TEXT_ALIGN_CENTER);
+    unsigned level = s->voice_peak / 160;
+    if (level > 196) level = 196;
+    box(layer, 20, 128, 200, 22, COL_BG, COL_DIM, 1, 2);
+    if (s->voice_recording && level) box(layer, 22, 130, level, 18, COL_GREEN, COL_GREEN, 0, 0);
+    snprintf(elapsed, sizeof(elapsed), "%02u:%02u / 02:00", s->voice_seconds / 60, s->voice_seconds % 60);
+    text(layer, 12, 170, 216, COL_INK, elapsed, true, LV_TEXT_ALIGN_CENTER);
+    text(layer, 12, 222, 216, COL_INK, s->voice_recording ? "确认键：结束录音" : "确认键：开始录音", false, LV_TEXT_ALIGN_CENTER);
+    text(layer, 12, 252, 216, COL_DIM, "仅支持局域网连接", false, LV_TEXT_ALIGN_CENTER);
+    text(layer, 12, 298, 216, COL_DIM, "上键：返回", false, LV_TEXT_ALIGN_CENTER);
 }
 
 static void redraw(void)
@@ -516,6 +533,7 @@ static void redraw(void)
     switch (s_snapshot.page) {
     case BUDDY_PAGE_PET: draw_companion(layer, &s_snapshot); break;
     case BUDDY_PAGE_INFO: draw_info(layer, &s_snapshot); break;
+    case BUDDY_PAGE_VOICE: draw_voice(layer, &s_snapshot); break;
     case BUDDY_PAGE_SETTINGS: draw_settings(layer, &s_snapshot); break;
     default: draw_home(layer, &s_snapshot); break;
     }

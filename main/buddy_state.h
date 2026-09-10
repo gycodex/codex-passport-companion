@@ -48,6 +48,7 @@ typedef struct {
     bool transcript_enabled;
     bool screen_off;
     bool screen_dimmed;
+    bool voice_recording;
     uint8_t brightness_level;
     uint8_t species;
     buddy_permission_delivery_t permission_delivery;

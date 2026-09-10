@@ -42,6 +42,7 @@ typedef enum {
     BUDDY_PAGE_INFO,
     BUDDY_PAGE_TRANSCRIPT,
     BUDDY_PAGE_SETTINGS,
+    BUDDY_PAGE_VOICE,
 } buddy_page_t;
 
 typedef enum {
@@ -49,7 +50,7 @@ typedef enum {
     BUDDY_MENU_TURN_OFF,
     BUDDY_MENU_HELP,
     BUDDY_MENU_ABOUT,
-    BUDDY_MENU_DEMO,
+    BUDDY_MENU_VOICE,
     BUDDY_MENU_CLOSE,
     BUDDY_MENU_COUNT,
 } buddy_menu_item_t;
@@ -263,6 +264,7 @@ typedef struct {
     bool confirmation_acknowledge;
     bool play_completion_sound;
     bool play_connection_sound;
+    bool voice_toggle;
 } buddy_action_t;
 
 typedef struct {
@@ -298,6 +300,8 @@ typedef struct {
     bool reset_open;
     bool transcript_enabled;
     bool screen_off;
+    bool voice_ready, voice_recording;
+    unsigned voice_seconds, voice_peak;
     uint8_t brightness_level;
     uint8_t sound_mode;
     uint8_t sleep_mode;

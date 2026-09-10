@@ -1199,6 +1199,28 @@ static void test_switching_computers_rebases_completion_counter(void)
     assert(action.play_completion_sound);
 }
 
+static void test_voice_menu_and_power(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_state_init(&state, NULL);
+    state.menu_open = true;
+    state.menu_selection = BUDDY_MENU_VOICE;
+    buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
+    buddy_state_reduce(&state, &key, 1000, &action);
+    assert(state.page == BUDDY_PAGE_VOICE && !state.menu_open && !action.voice_toggle);
+    buddy_state_reduce(&state, &key, 2000, &action);
+    assert(action.voice_toggle);
+    state.voice_recording = true;
+    state.settings.sleep_mode = BUDDY_SLEEP_1_MIN;
+    buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
+    buddy_state_reduce(&state, &tick, 120000, &action);
+    assert(!state.screen_off && !state.screen_dimmed);
+    key.key = BUDDY_KEY_UP;
+    buddy_state_reduce(&state, &key, 121000, &action);
+    assert(state.page == BUDDY_PAGE_HOME && !action.voice_toggle);
+}
+
 int main(void)
 {
     test_connection_chime_once_per_live_session();
@@ -1207,6 +1229,7 @@ int main(void)
     test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();
     test_completion_sound_is_an_edge_not_a_replayed_snapshot();
+    test_voice_menu_and_power();
     test_offline_initialization();
     test_heartbeat_mapping();
     test_codex_completion_sequence_celebrates_once();

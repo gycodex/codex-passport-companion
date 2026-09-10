@@ -5,3 +5,5 @@
 
 /* Keep the connection controls close to the header. */
 .layout{margin-top:24px}
+
+.layout{align-items:start}#voice-status{font-size:12px;line-height:1.6}#voice-meter{width:100%;accent-color:var(--green)}

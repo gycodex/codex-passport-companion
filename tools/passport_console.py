@@ -96,7 +96,9 @@ class Controller:
     def __init__(self, directory):
         self.directory = directory
         self.lock = threading.RLock()
-        self.config = dict(mode="lan", host="", port=8765, device="", codex="", codex_auto=True, autoconnect=False)
+        self.config = dict(mode="lan", host="", port=8765, device="", codex="", codex_auto=True, autoconnect=False,
+            voice_enabled=False, voice_output="", voice_ime="xunfei",
+            voice_start_key="f6", voice_stop_key="f6", voice_hotkeys=True)
         try:
             saved = json.loads((directory / "settings.json").read_text(encoding="utf-8"))
             self.config.update({k: saved[k] for k in self.config if k in saved})
@@ -162,6 +164,8 @@ class Controller:
                 raise ValueError("Invalid autoconnect setting")
             if type(cfg["codex_auto"]) is not bool:
                 raise ValueError("Invalid setting")
+            from voice_bridge import validate_config
+            validate_config(cfg)
             pairing = data.get("pairing")
             if pairing is not None:
                 if not isinstance(pairing, dict) or not isinstance(pairing.get("key"), str):
@@ -195,7 +199,7 @@ class Controller:
                 except asyncio.CancelledError:
                     pass
             self.test_pending = False
-            self.report("disconnected")
+            self.report("disconnected", voice=dict(status="off", peak=0))
         elif name == "test":
             with self.lock:
                 if self.state["status"] != "connected":
@@ -204,6 +208,10 @@ class Controller:
                     raise ValueError("Please wait five seconds between tests")
                 self.last_test = time.monotonic()
                 self.test_pending = True
+        elif name == "voice_devices":
+            from voice_bridge import output_devices
+            # PortAudio/WASAPI must initialize and open streams on the same thread.
+            return {"devices": output_devices()}
         elif name == "scan":
             if self.task and not self.task.done():
                 raise ValueError("Disconnect before scanning")
@@ -231,6 +239,8 @@ class Controller:
         finally:
             self.loop.call_soon_threadsafe(self.loop.stop)
             self.thread.join(timeout=5)
+            if not self.thread.is_alive():
+                self.loop.close()
 
 
 class Server(ThreadingHTTPServer):
