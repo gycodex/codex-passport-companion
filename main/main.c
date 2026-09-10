@@ -969,6 +969,12 @@ static void buddy_publish_rendered_view(const buddy_ui_snapshot_t *snapshot)
 static void buddy_render(buddy_state_t *state, const buddy_action_t *action, uint64_t now_ms)
 {
     static buddy_ui_snapshot_t snapshot;
+    static uint64_t last_lan_render_ms;
+
+    /* A full indexed canvas is CPU-heavy with Wi-Fi's flash-resident driver.
+     * Match the pet's 5 fps animation clock and leave time for LAN/USB/idle. */
+    if (s_lan_mode && now_ms - last_lan_render_ms < 200U) return;
+    if (s_lan_mode) last_lan_render_ms = now_ms;
 
     buddy_state_snapshot(state, &snapshot);
     if (!bsp_lvgl_lock(1000)) {

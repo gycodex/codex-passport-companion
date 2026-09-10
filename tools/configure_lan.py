@@ -49,6 +49,8 @@ def main():
     port.dtr = False; port.rts = False
     port.open()
     try:
+        # Allow the native USB endpoint to settle after opening it on Windows.
+        time.sleep(0.3)
         if args.status:
             print(json.dumps(exchange(port, "FAP_LAN_STATUS_V1"), ensure_ascii=False))
         elif args.setup:

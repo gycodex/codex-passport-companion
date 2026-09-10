@@ -429,7 +429,8 @@ def heartbeat_payload(
 
 async def send_payload(client: Any, payload: bytes) -> None:
     if hasattr(client, "send_payload"):
-        await client.send_payload(payload)
+        # BLE strips its line delimiter before parsing; LAN has its own frame.
+        await client.send_payload(payload.removesuffix(b"\n").removesuffix(b"\r"))
         return
     characteristic = client.services.get_characteristic(NUS_RX_UUID)
     if characteristic is None:

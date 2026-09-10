@@ -13,6 +13,15 @@ SPEC.loader.exec_module(codex_bridge)
 
 
 class CodexBridgeTests(unittest.TestCase):
+    def test_lan_adapter_removes_only_the_ble_line_terminator(self) -> None:
+        received = []
+        class Client:
+            async def send_payload(self, payload):
+                received.append(payload)
+        for payload in (b'{"time":[1,0]}\n', b'{"time":[1,0]}\r\n', b'{"time":[1,0]}'):
+            asyncio.run(codex_bridge.send_payload(Client(), payload))
+        self.assertEqual(received, [b'{"time":[1,0]}'] * 3)
+
     def test_weekly_only_window_is_not_relabelled_as_five_hours(self) -> None:
         result = codex_bridge.normalize_rate_limits({"rateLimits": {
             "primary": {"usedPercent": 36, "windowDurationMins": 10080,

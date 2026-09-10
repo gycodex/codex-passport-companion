@@ -37,6 +37,7 @@ static lan_buffers_t *s_buffers;
 static lan_config_t s_config;
 static atomic_bool s_up, s_authenticated;
 static atomic_uint s_generation;
+static atomic_uint s_event_stack_free;
 static portMUX_TYPE s_ip_lock = portMUX_INITIALIZER_UNLOCKED;
 static char s_ip[16];
 static buddy_lan_receive_t s_receive;
@@ -161,11 +162,15 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = data;
+        char ip[16] = {0};
+        snprintf(ip, sizeof(ip), IPSTR, IP2STR(&event->ip_info.ip));
         taskENTER_CRITICAL(&s_ip_lock);
-        snprintf(s_ip, sizeof(s_ip), IPSTR, IP2STR(&event->ip_info.ip));
+        memcpy(s_ip, ip, sizeof(s_ip));
         taskEXIT_CRITICAL(&s_ip_lock);
         atomic_store(&s_up, true);
     }
+    /* ESP-IDF reports this watermark in bytes, including earlier event handlers. */
+    atomic_store(&s_event_stack_free, uxTaskGetStackHighWaterMark(NULL));
 }
 static bool send_all(int socket, const char *data, size_t length)
 {
@@ -367,10 +372,11 @@ bool buddy_lan_usb_command(const char *line)
     }
     if (strcmp(line, "FAP_LAN_STATUS_V1") == 0) {
         char ip[16]; buddy_lan_ip(ip);
-        printf("FAP_LAN {\"configured\":%s,\"ip\":\"%s\",\"port\":%u,\"connected\":%s,\"crypto_ok\":%s,\"setup\":%s,\"heap\":%lu}\n",
+        printf("FAP_LAN {\"configured\":%s,\"ip\":\"%s\",\"port\":%u,\"connected\":%s,\"crypto_ok\":%s,\"setup\":%s,\"heap\":%lu,\"uptime_s\":%lu,\"event_stack_free\":%u}\n",
                buddy_lan_configured() ? "true" : "false", ip, BUDDY_LAN_PORT,
                buddy_lan_connected() ? "true" : "false", crypto_self_test() ? "true" : "false",
-               s_setup ? "true" : "false", (unsigned long)esp_get_free_heap_size());
+               s_setup ? "true" : "false", (unsigned long)esp_get_free_heap_size(),
+               (unsigned long)(esp_timer_get_time()/1000000), atomic_load(&s_event_stack_free));
         return true;
     }
     if (strncmp(line, "FAP_LAN_CONFIG_V1 ", 18) != 0) return false;
