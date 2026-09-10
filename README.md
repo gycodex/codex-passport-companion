@@ -2,6 +2,8 @@
 
 [简体中文](README.zh_CN.md) · **English**
 
+> **Need the LAN / Wi-Fi version?** The `main` branch is the Bluetooth version. For computers without Bluetooth, use the [feature/lan-connection branch](https://github.com/gycodex/codex-passport-companion/tree/feature/lan-connection), which supports phone hotspot provisioning and encrypted LAN sync. Use both the firmware and bridge from that branch. See the [LAN setup guide](https://github.com/gycodex/codex-passport-companion/blob/feature/lan-connection/docs/LAN.md).
+
 This firmware turns FoloToy AI Passport into a private Codex desk companion. It shows the
 remaining share of the Codex usage windows actually returned by the service as progress bars, shows the
 number of active tasks, and displays a six-second **Task complete** celebration when Codex

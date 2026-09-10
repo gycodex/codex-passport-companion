@@ -2,6 +2,8 @@
 
 **简体中文** · [English](README.md)
 
+> **需要局域网 / Wi-Fi 版本？** `main` 分支是蓝牙版。台式机没有蓝牙，或希望通过局域网连接，请使用 [feature/lan-connection 分支](https://github.com/gycodex/codex-passport-companion/tree/feature/lan-connection)。该分支支持手机连接设备热点配网和加密局域网同步；请使用该分支配套的固件与桥接程序。详见 [局域网配网与使用说明](https://github.com/gycodex/codex-passport-companion/blob/feature/lan-connection/docs/LAN.md)。
+
 这个固件把 FoloToy AI Passport 变成一个注重隐私的 Codex 桌面伙伴：显示当前
 接口实际返回的用量窗口剩余比例（例如 7 天）、以进度条展示余量、显示正在进行的任务数，并在
 Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首页右上角同时显示电量。
