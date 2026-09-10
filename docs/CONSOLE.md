@@ -6,7 +6,7 @@
 
 先安装 Python 3.10+、Codex CLI，并在当前系统用户下完成 Codex 登录。
 
-- **Windows：**双击仓库根目录 `start-console.cmd`。首次启动会创建独立 Python 环境、安装依赖。
+- **Windows：**双击仓库根目录 `start-console.cmd`。首次启动会检查 Python 版本、创建独立 Python 环境并安装依赖。旧版 Python 环境会备份后重建；如果控制台已在运行，直接打开网页。
 - **macOS：**在终端执行 `bash start-console.command`。也可先 `chmod +x start-console.command`，然后双击启动。首次使用蓝牙时允许系统的蓝牙访问请求。
 - 浏览器自动打开 `http://127.0.0.1:8766/`。以后重复启动会打开已有控制台，不建立第二个桥接。
 - 关闭浏览器标签页不会断开；启动它的终端需保持运行。在终端按 Ctrl+C 可退出程序并断开设备。

@@ -8,6 +8,7 @@ dependencies.lock
 .venv/
 .venv-bridge/
 .venv-console/
+.venv-console-backup-*/
 __pycache__/
 *.pyc
 passport-lan*.json*
