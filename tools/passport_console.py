@@ -98,7 +98,7 @@ class Controller:
         self.lock = threading.RLock()
         self.config = dict(mode="lan", host="", port=8765, device="", codex="", codex_auto=True, autoconnect=False,
             voice_enabled=False, voice_output="", voice_ime="xunfei",
-            voice_start_key="f6", voice_stop_key="f6", voice_hotkeys=True)
+            voice_start_key="f6", voice_stop_key="f6", voice_hotkeys=True, voice_doubao_compat=False)
         try:
             saved = json.loads((directory / "settings.json").read_text(encoding="utf-8"))
             self.config.update({k: saved[k] for k in self.config if k in saved})

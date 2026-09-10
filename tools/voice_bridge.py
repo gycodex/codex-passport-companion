@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager, suppress
 import threading
 import time
 import sys
+from doubao_compat import MARKER
 
 
 def parse_shortcut(value):
@@ -28,6 +29,8 @@ def parse_shortcut(value):
 
 
 def validate_config(cfg):
+    if type(cfg.get("voice_doubao_compat", False)) is not bool:
+        raise ValueError("豆包适配设置无效")
     if type(cfg["voice_enabled"]) is not bool or type(cfg["voice_hotkeys"]) is not bool:
         raise ValueError("语音设置无效")
     if cfg["voice_ime"] not in ("xunfei", "doubao", "typeless", "custom"):
@@ -140,9 +143,31 @@ def windows_right_alt(pressed):
     from pynput._util.win32 import INPUT, INPUT_union, KEYBDINPUT, SendInput
     # KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY (+ KEYEVENTF_KEYUP).
     event = INPUT(type=INPUT.KEYBOARD, value=INPUT_union(
-        ki=KEYBDINPUT(wVk=0, wScan=0x38, dwFlags=0x09 | (0 if pressed else 0x02))))
+        ki=KEYBDINPUT(wVk=0, wScan=0x38, dwFlags=0x09 | (0 if pressed else 0x02), dwExtraInfo=MARKER)))
     if SendInput(1, ctypes.byref(event), ctypes.sizeof(INPUT)) != 1:
         raise ValueError("右 Alt 发送失败，请检查输入法与控制台是否以相同权限运行")
+
+
+def windows_shortcut_key(name, pressed):
+    """Send physical keys; generic Alt does not identify the configured left Alt."""
+    import ctypes
+    from pynput._util.win32 import INPUT, INPUT_union, KEYBDINPUT, MapVirtualKey, SendInput
+    virtual_keys = {"ctrl": 0xA2, "shift": 0xA0, "alt": 0xA4,
+                    "alt_r": 0xA5, "cmd": 0x5B, "space": 0x20}
+    if name in virtual_keys:
+        vk = virtual_keys[name]
+    elif name.startswith("f") and name[1:].isdigit():
+        vk = 0x70 + int(name[1:]) - 1
+    else:
+        vk = ord(name.upper())
+    scan = MapVirtualKey(vk, MapVirtualKey.MAPVK_VK_TO_VSC)
+    if not scan:
+        raise ValueError("无法映射语音快捷键")
+    flags = 0x08 | (0x01 if name in ("alt_r", "cmd") else 0) | (0 if pressed else 0x02)
+    event = INPUT(type=INPUT.KEYBOARD, value=INPUT_union(
+        ki=KEYBDINPUT(wVk=0, wScan=scan, dwFlags=flags, dwExtraInfo=MARKER)))
+    if SendInput(1, ctypes.byref(event), ctypes.sizeof(INPUT)) != 1:
+        raise ValueError("语音快捷键发送失败，请检查输入法与控制台是否以相同权限运行")
 
 
 class Shortcuts:
@@ -151,13 +176,24 @@ class Shortcuts:
         self.start = parse_shortcut(cfg["voice_start_key"])
         self.stop = parse_shortcut(cfg["voice_stop_key"])
         self.keyboard = None
+        self.compat = None
         if self.enabled:
             from pynput.keyboard import Controller, Key
             self.keyboard, self.Key = Controller(), Key
+            if sys.platform == "win32" and cfg.get("voice_ime") == "doubao" and cfg.get("voice_doubao_compat", False):
+                from doubao_compat import DoubaoCompatibility
+                self.compat = DoubaoCompatibility()
+                self.compat.start()
+
+    def close(self):
+        if self.compat:
+            self.compat.close()
 
     def send(self, keys):
         if not self.enabled:
             return
+        if self.compat:
+            self.compat.check()
         if sys.platform == "win32" and keys == ["alt_r"]:
             try:
                 windows_right_alt(True)
@@ -168,13 +204,25 @@ class Shortcuts:
         pressed = []
         try:
             for name in keys:
-                key = getattr(self.Key, name) if len(name) > 1 else name
-                self.keyboard.press(key)
+                key = name if sys.platform == "win32" else (getattr(self.Key, name) if len(name) > 1 else name)
+                if sys.platform == "win32":
+                    windows_shortcut_key(key, True)
+                else:
+                    self.keyboard.press(key)
                 pressed.append(key)
-            time.sleep(.03)
+            time.sleep(.08)
         finally:
+            release_error = None
             for key in reversed(pressed):
-                self.keyboard.release(key)
+                try:
+                    if sys.platform == "win32":
+                        windows_shortcut_key(key, False)
+                    else:
+                        self.keyboard.release(key)
+                except Exception as error:
+                    release_error = error
+            if release_error:
+                raise release_error
 
 
 
@@ -227,14 +275,19 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
         output = MeterOutput() if cfg["voice_output"] == "meter" else AudioOutput(cfg["voice_output"])
         shortcuts = Shortcuts(cfg)
         session, expected, last_report = 0, 0, 0
+        poll_ms = 0
         while client.is_connected and not stop_requested():
+            poll_start = time.monotonic()
             packet = await client.request(b'{"voice":"poll"}')
+            poll_ms = round((time.monotonic() - poll_start) * 1000, 1)
             pcm = decode_packet(packet)
             if packet["session"] != session and (packet["recording"] or pcm):
                 if started:
                     raise ValueError("语音会话切换异常，请重新连接")
                 session, expected = packet["session"], 0
+                report("voice_event", message="收到设备录音开始事件")
                 shortcuts.send(shortcuts.start)
+                report("voice_event", message="开始快捷键已发送" if shortcuts.enabled else "快捷键未启用（仅传输或测试音频）")
                 started = True
             if pcm:
                 gap = packet["sequence"] - expected
@@ -249,27 +302,41 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
                 await output.drain()
                 started = False
                 shortcuts.send(shortcuts.stop)
+                report("voice_event", message="设备录音结束，结束快捷键已发送" if shortcuts.enabled else "设备录音结束")
             now = time.monotonic()
             if now - last_report >= .2:
                 report("synced", voice=dict(status="recording" if started else "ready",
-                    peak=packet["peak"] if started else 0, dropped=packet["dropped"] + output.dropped))
+                    peak=packet["peak"] if started else 0, dropped=packet["dropped"] + output.dropped,
+                    poll_ms=poll_ms, device_pending_ms=packet["pending"] * 20,
+                    output_pending_ms=round(1000 * getattr(output, "buffered", 0) /
+                        (getattr(output, "rate", 16000) * getattr(output, "channels", 1) * 2), 1)))
                 last_report = now
-            await asyncio.sleep(.01 if started else .02)
+            # Drain queued device audio immediately, yielding between requests.
+            await asyncio.sleep(0 if packet["pending"] else (.01 if started else .02))
     except asyncio.CancelledError:
         raise
     except Exception as error:
         message = str(error) if isinstance(error, ValueError) else "语音连接失败，请检查虚拟音频设备和系统权限"
         report("voice_error", message=message, voice=dict(status="error", message=message, peak=0))
     finally:
-        if client.is_connected:
-            with suppress(Exception):
-                await asyncio.wait_for(client.request(b'{"voice":"stop"}'), 1)
-        if output:
-            await output.drain()
-            output.close()
-        if started and shortcuts:
-            with suppress(Exception):
-                shortcuts.send(shortcuts.stop)
+        try:
+            if client.is_connected:
+                with suppress(Exception):
+                    await asyncio.wait_for(client.request(b'{"voice":"stop"}'), 1)
+            if output:
+                with suppress(Exception):
+                    await output.drain()
+        finally:
+            if output:
+                with suppress(Exception):
+                    output.close()
+            try:
+                if started and shortcuts:
+                    with suppress(Exception):
+                        shortcuts.send(shortcuts.stop)
+            finally:
+                if shortcuts and hasattr(shortcuts, "close"):
+                    shortcuts.close()
 
 
 @asynccontextmanager

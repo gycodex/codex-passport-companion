@@ -37,6 +37,39 @@ class AudioThreadTests(unittest.TestCase):
 
 
 class ValidationTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows input ABI')
+    def test_left_alt_v_scan_codes_and_rejected_input(self):
+        import ctypes
+        from pynput._util.win32 import INPUT
+        from voice_bridge import windows_shortcut_key
+        events = []
+        def accept(count, pointer, size):
+            event = ctypes.cast(pointer, ctypes.POINTER(INPUT)).contents
+            events.append((event.value.ki.wVk, event.value.ki.wScan, event.value.ki.dwFlags))
+            return 1
+        with patch('pynput._util.win32.SendInput', side_effect=accept):
+            for key, down in [('alt', True), ('v', True), ('v', False), ('alt', False)]:
+                windows_shortcut_key(key, down)
+        self.assertEqual(events, [(0, 0x38, 8), (0, 0x2f, 8), (0, 0x2f, 10), (0, 0x38, 10)])
+        with patch('pynput._util.win32.SendInput', return_value=0):
+            with self.assertRaises(ValueError):
+                windows_shortcut_key('alt', True)
+
+    def test_failed_main_key_releases_modifier(self):
+        from voice_bridge import Shortcuts
+        keys = Shortcuts({'voice_hotkeys': False, 'voice_output': 'meter',
+                         'voice_start_key': 'alt+v', 'voice_stop_key': 'alt+v'})
+        keys.enabled = True
+        events = []
+        def send(name, down):
+            events.append((name, down))
+            if name == 'v' and down:
+                raise ValueError('rejected')
+        with patch('voice_bridge.sys.platform', 'win32'), patch('voice_bridge.windows_shortcut_key', side_effect=send):
+            with self.assertRaises(ValueError):
+                keys.send(keys.start)
+        self.assertEqual(events, [('alt', True), ('v', True), ('alt', False)])
+
     def test_right_alt_tap_releases_even_when_interrupted(self):
         from voice_bridge import Shortcuts
         keys = Shortcuts({'voice_hotkeys': False, 'voice_output': 'meter',
@@ -126,6 +159,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
             async def drain(self): events.append('drain')
             def close(self): events.append('close')
         class Keys:
+            enabled = True
             start, stop = 'start', 'stop'
             def __init__(self, _): pass
             def send(self, key): events.append(key)
@@ -152,6 +186,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
             async def drain(self): pass
             def close(self): events.append('close')
         class Keys:
+            enabled = True
             start, stop = 'start', 'stop'
             def __init__(self, _): pass
             def send(self, key): events.append(key)

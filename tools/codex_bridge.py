@@ -558,7 +558,8 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                     from voice_bridge import voice_session
                     async with voice_session(client, control):
                         while client.is_connected and not (control is not None and getattr(control, "stop_requested", False)):
-                            changed = watcher.poll()
+                            # File scans must not pause the LAN microphone polling task.
+                            changed = await asyncio.to_thread(watcher.poll)
                             if control is not None and control.take_test():
                                 watcher.completion_sequence += 1
                                 watcher._save_sequence()

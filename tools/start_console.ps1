@@ -1,3 +1,4 @@
+param([switch]$Administrator)
 $ErrorActionPreference = 'Stop'
 $repoPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $repoPath
@@ -9,6 +10,12 @@ function Test-ConsolePython([string]$Candidate) {
     } catch { return $false }
 }
 try {
+    if ($Administrator -and -not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        $process = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Administrator')
+        # Wait only for the launcher, not its long-running Python descendants.
+        $process.WaitForExit()
+        exit $process.ExitCode
+    }
     try {
         $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8766/health' -TimeoutSec 2
         if ($health.app -eq 'passport-companion-console') {
@@ -47,6 +54,13 @@ try {
     if ($LASTEXITCODE -ne 0) {
         & $consolePython -m pip install -r (Join-Path $PSScriptRoot 'requirements-console.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed. Check the network and retry; details are shown above.' }
+    }
+    if ($Administrator) {
+        & $consolePython -c 'import importlib.util,importlib.metadata,sys; sys.exit(0 if importlib.util.find_spec(sys.argv[1]) and importlib.metadata.version(sys.argv[1]) == sys.argv[2] else 1)' frida 17.18.0
+        if ($LASTEXITCODE -ne 0) {
+            & $consolePython -m pip install -r (Join-Path $PSScriptRoot 'requirements-doubao.txt')
+            if ($LASTEXITCODE -ne 0) { throw 'Doubao compatibility dependency installation failed.' }
+        }
     }
     $windowlessPython = Join-Path $venvPath 'Scripts\pythonw.exe'
     $entryPoint = Join-Path $PSScriptRoot 'run_console_windowless.py'
