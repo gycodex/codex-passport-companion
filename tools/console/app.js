@@ -28,7 +28,7 @@ function localize(message) {
 }
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name="passport-token"]').content;
-let initialized = false, pairing = null, busy = false;
+let initialized = false, pairing = null, busy = false, exited = false;
 async function api(action, data) {
   const response = await fetch('/api/' + action, {method:data === undefined?'GET':'POST',headers:{'X-Passport-Token':token,'Content-Type':'application/json'},body:data === undefined?undefined:JSON.stringify(data)});
   const result = await response.json();
@@ -40,7 +40,7 @@ function mode() { return document.querySelector('input[name=mode]:checked').valu
 function toggleMode() { $('lan-fields').hidden=mode()!=='lan'; $('ble-fields').hidden=mode()!=='ble'; }
 document.querySelectorAll('[name=mode]').forEach(el=>el.addEventListener('change',toggleMode));
 function configuration() { const cfg={mode:mode(),host:$('host').value,device:$('device').value,port:Number($('port').value),codex:$('codex').value,autoconnect:$('autoconnect').checked}; if(pairing)cfg.pairing=pairing; return cfg; }
-async function operation(work) { if(busy)return;busy=true;try{await work();await refresh();}catch(error){notice(localize(error.message),true);}finally{busy=false;} }
+async function operation(work) { if(busy)return;busy=true;try{await work();if(!exited)await refresh();}catch(error){notice(localize(error.message),true);}finally{busy=false;} }
 $('pairing').addEventListener('change',async()=>{try{const file=$('pairing').files[0];if(!file)return;if(file.size>65536)throw new Error('配对文件过大');const value=JSON.parse(await file.text());if(!/^[0-9a-f]{64}$/i.test(value.key||''))throw new Error('配对文件格式不正确');pairing={key:value.key};$('key-state').textContent='待保存';notice('配对文件已载入，点击保存即可留在本机。');}catch(error){pairing=null;notice(localize(error.message),true);}});
 async function save(){await api('save',configuration());pairing=null;$('pairing').value='';notice('设置已保存。');}
 $('settings').addEventListener('submit',event=>{event.preventDefault();operation(async()=>{await save();await api('connect',{});notice('正在连接… 首次蓝牙配对可能会弹出系统配对窗口。');});});
@@ -51,4 +51,6 @@ $('scan').onclick=()=>operation(async()=>{notice('正在搜索蓝牙设备…');
 $('devices').onchange=()=>{$('device').value=$('devices').value;};
 async function refresh(){const state=await api('status');if(!initialized){for(const id of ['host','device','port','codex'])$(id).value=state.config[id];$('autoconnect').checked=state.config.autoconnect;document.querySelector(`input[name=mode][value="${state.config.mode}"]`).checked=true;toggleMode();initialized=true;}
 const active=['starting','connecting','connected','retrying','stopping'].includes(state.status),connected=state.status==='connected';$('badge').textContent=(statusLabels[state.status] || '状态未知');$('pet').classList.toggle('awake',connected);$('activity').textContent=connected?(state.running?'正在陪你完成任务':'随时迎接下一个灵感'):(active?'正在寻找小伙伴…':'正在休息一会儿');$('detail').textContent=connected?'设备正在接收实时状态更新。':(active?'请检查设备模式、IP 地址，以及是否有其他电脑正在连接。':'连接设备，让小伙伴上线陪你。');$('tasks').textContent=connected?state.running:'—';$('sync').textContent=state.synced_at?new Date(state.synced_at*1000).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}):'—';$('test').disabled=!connected;$('connect').hidden=active;$('save').hidden=active;$('disconnect').hidden=!active;for(const input of document.querySelectorAll('#settings input, #settings select, #scan'))input.disabled=active;$('key-state').textContent=pairing?'待保存':state.key_present?'✓ 配对密钥已保存在本机':'尚未保存配对密钥';$('usage').replaceChildren();for(const key of ['primary','secondary']){const w=state.usage[key];if(!w||!w.duration)continue;const remaining=Math.max(0,Math.min(100,100-w.used));const row=document.createElement('p');const label=document.createElement('span');label.textContent=w.duration>=1440?`${w.duration/1440} 天`:`${w.duration/60} 小时`;const value=document.createElement('span');value.textContent=`剩余 ${Math.round(remaining)}%`;row.append(label,value);const bar=document.createElement('progress');bar.max=100;bar.value=remaining;$('usage').append(row,bar);}$('logs').replaceChildren();for(const entry of state.logs.slice().reverse()){const li=document.createElement('li'),time=document.createElement('time');time.textContent=new Date(entry.at*1000).toLocaleTimeString('zh-CN');li.append(time,document.createTextNode(localize(entry.message)));$('logs').append(li);}}
-async function poll(){try{await refresh();}catch(error){notice('无法连接本机控制台，请重新运行启动程序。',true);}setTimeout(poll,2000);}poll();
+async function poll(){if(exited)return;try{await refresh();}catch(error){notice('无法连接本机控制台，请重新运行启动程序。',true);}setTimeout(poll,2000);}poll();
+
+$('exit-console').onclick=()=>operation(async()=>{await api('exit',{});exited=true;notice('后台已退出，设备连接已断开，可以关闭网页。');});

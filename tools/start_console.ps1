@@ -47,8 +47,21 @@ try {
         & $consolePython -m pip install -r (Join-Path $PSScriptRoot 'requirements-console.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed. Check the network and retry; details are shown above.' }
     }
-    & $consolePython (Join-Path $PSScriptRoot 'passport_console.py')
-    exit $LASTEXITCODE
+    $windowlessPython = Join-Path $venvPath 'Scripts\pythonw.exe'
+    $entryPoint = Join-Path $PSScriptRoot 'run_console_windowless.py'
+    $background = Start-Process -FilePath $windowlessPython -ArgumentList @(('"' + $entryPoint + '"')) -WindowStyle Hidden -PassThru
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        try {
+            $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8766/health' -TimeoutSec 1
+            if ($health.app -eq 'passport-companion-console') {
+                Start-Process 'http://127.0.0.1:8766/'
+                exit 0
+            }
+        } catch { }
+        if ($background.HasExited) { throw 'Background startup failed. See ~/.codex/passport-console/console.log.' }
+        Start-Sleep -Milliseconds 200
+    }
+    throw 'Console startup timed out. See ~/.codex/passport-console/console.log.'
 } catch {
     Write-Host "Console startup failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

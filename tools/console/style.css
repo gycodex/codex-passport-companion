@@ -2,3 +2,6 @@
 
 /* Chinese typography uses local system fonts without external requests. */
 :root{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif}.intro h1,h2{font-family:"Songti SC","SimSun",serif}.intro h1{line-height:1.2;letter-spacing:0}.brand span,.eyebrow,.card-head,.local{letter-spacing:1px}.metrics span{font-size:11px}.intro h1{font-size:50px}@media(max-width:720px){.intro h1{font-size:40px}}
+
+/* Keep the connection controls close to the header. */
+.layout{margin-top:24px}
