@@ -1039,6 +1039,7 @@ static void buddy_app_task(void *context)
     static buddy_event_t event;
     uint64_t last_battery_ms = 0;
     uint64_t last_settings_ms = 0;
+    uint32_t last_lan_generation = 0;
 
     (void)context;
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -1062,11 +1063,13 @@ static void buddy_app_task(void *context)
 
         if (s_lan_mode) {
             bool connected = buddy_lan_connected();
-            if (state.lan_connected && !connected) {
+            uint32_t generation = buddy_lan_generation();
+            if (state.lan_connected && (!connected || generation != last_lan_generation)) {
                 buddy_event_t lost = {.type=BUDDY_EVENT_LAN_DISCONNECTED};
                 buddy_state_reduce(&state, &lost, now_ms, &action);
             }
             state.lan_connected = connected;
+            last_lan_generation = generation;
             buddy_lan_ip(state.lan_ip);
         }
         if (s_lan_mode && ready == NULL && xQueueReceive(s_lan_queue, &event, 0) == pdTRUE) {

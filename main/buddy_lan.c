@@ -1,4 +1,5 @@
 #include "buddy_lan.h"
+#include "buddy_sound.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdatomic.h>
@@ -372,11 +373,12 @@ bool buddy_lan_usb_command(const char *line)
     }
     if (strcmp(line, "FAP_LAN_STATUS_V1") == 0) {
         char ip[16]; buddy_lan_ip(ip);
-        printf("FAP_LAN {\"configured\":%s,\"ip\":\"%s\",\"port\":%u,\"connected\":%s,\"crypto_ok\":%s,\"setup\":%s,\"heap\":%lu,\"uptime_s\":%lu,\"event_stack_free\":%u}\n",
+        printf("FAP_LAN {\"configured\":%s,\"ip\":\"%s\",\"port\":%u,\"connected\":%s,\"crypto_ok\":%s,\"setup\":%s,\"heap\":%lu,\"uptime_s\":%lu,\"event_stack_free\":%u,\"sound_stage\":%lu,\"sound_played\":%lu}\n",
                buddy_lan_configured() ? "true" : "false", ip, BUDDY_LAN_PORT,
                buddy_lan_connected() ? "true" : "false", crypto_self_test() ? "true" : "false",
                s_setup ? "true" : "false", (unsigned long)esp_get_free_heap_size(),
-               (unsigned long)(esp_timer_get_time()/1000000), atomic_load(&s_event_stack_free));
+               (unsigned long)(esp_timer_get_time()/1000000), atomic_load(&s_event_stack_free),
+               (unsigned long)buddy_sound_stage(), (unsigned long)buddy_sound_play_count());
         return true;
     }
     if (strncmp(line, "FAP_LAN_CONFIG_V1 ", 18) != 0) return false;

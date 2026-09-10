@@ -113,13 +113,17 @@ static void test_codex_completion_sequence_celebrates_once(void)
 
     buddy_state_init(&state, &settings);
     buddy_state_reduce(&state, &heartbeat, 1000, &action);
+    assert(action.type == BUDDY_ACTION_UI_REFRESH);
+    assert(state.character != BUDDY_CHARACTER_CELEBRATE);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 6;
+    buddy_state_reduce(&state, &heartbeat, 1001, &action);
     assert(action.type == BUDDY_ACTION_SETTINGS);
     assert(state.character == BUDDY_CHARACTER_CELEBRATE);
     assert(state.codex_usage.primary_used_percent == 20);
 
-    buddy_state_reduce(&state, &heartbeat, 1001, &action);
+    buddy_state_reduce(&state, &heartbeat, 1002, &action);
     assert(action.type == BUDDY_ACTION_UI_REFRESH);
-    assert(state.highest_celebrated_level == 5);
+    assert(state.highest_celebrated_level == 6);
 }
 
 static void test_character_priority(void)
@@ -1087,8 +1091,42 @@ static void test_wifi_setup_requires_explicit_local_click(void)
     assert(action.type == BUDDY_ACTION_LAN_SETUP);
 }
 
+static void test_switching_computers_rebases_completion_counter(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_settings_snapshot_t settings = {.highest_celebrated_level=500};
+    buddy_event_t heartbeat = {.type=BUDDY_EVENT_HEARTBEAT};
+    heartbeat.heartbeat.connected = true;
+    heartbeat.heartbeat.codex_usage.present = true;
+    heartbeat.heartbeat.codex_usage.completion_sequence = 2;
+    buddy_state_init(&state, &settings);
+    buddy_state_reduce(&state, &heartbeat, 100, &action);
+    assert(!action.play_completion_sound && state.highest_celebrated_level == 2);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 3;
+    buddy_state_reduce(&state, &heartbeat, 200, &action);
+    assert(action.play_completion_sound && state.character == BUDDY_CHARACTER_CELEBRATE);
+    buddy_state_reduce(&state, &heartbeat, 300, &action);
+    assert(!action.play_completion_sound);
+    buddy_event_t disconnected = {.type=BUDDY_EVENT_LAN_DISCONNECTED};
+    buddy_state_reduce(&state, &disconnected, 400, &action);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 900;
+    buddy_state_reduce(&state, &heartbeat, 500, &action);
+    assert(!action.play_completion_sound && state.character != BUDDY_CHARACTER_CELEBRATE);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 901;
+    buddy_state_reduce(&state, &heartbeat, 600, &action);
+    assert(action.play_completion_sound);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 0;
+    buddy_state_reduce(&state, &heartbeat, 700, &action);
+    assert(!action.play_completion_sound && state.highest_celebrated_level == 0);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 1;
+    buddy_state_reduce(&state, &heartbeat, 800, &action);
+    assert(action.play_completion_sound);
+}
+
 int main(void)
 {
+    test_switching_computers_rebases_completion_counter();
     test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();
     test_completion_sound_is_an_edge_not_a_replayed_snapshot();

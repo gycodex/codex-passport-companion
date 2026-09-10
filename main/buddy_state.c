@@ -389,6 +389,18 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
     buddy_copy(state->message, sizeof(state->message), heartbeat->message);
     buddy_copy_entries(state->entries, heartbeat->entries);
 
+    /* Codex counters belong to the connected computer. A new session (or a
+     * reset local counter) establishes a baseline without replaying old alerts. */
+    if (heartbeat->codex_usage.present &&
+            (!was_live || level < state->highest_celebrated_level)) {
+        state->highest_celebrated_level = level;
+        state->settings.highest_celebrated_level = level;
+        state->temporary_character = BUDDY_CHARACTER_IDLE;
+        state->temporary_until_ms = 0;
+        buddy_set_ui_refresh(action);
+        return;
+    }
+
     if (level > state->highest_celebrated_level) {
         state->highest_celebrated_level = level;
         state->settings.highest_celebrated_level = level;
