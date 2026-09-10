@@ -47,6 +47,7 @@ typedef struct {
     bool reset_open;
     bool transcript_enabled;
     bool screen_off;
+    bool screen_dimmed;
     uint8_t brightness_level;
     uint8_t species;
     buddy_permission_delivery_t permission_delivery;

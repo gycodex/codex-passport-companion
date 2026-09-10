@@ -1031,6 +1031,51 @@ static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
     assert(action.type == BUDDY_ACTION_SETTINGS && action.settings.sound_mode == BUDDY_SOUND_OFF);
 }
 
+static void test_work_dimming_uses_sleep_timer(void)
+{
+    const uint64_t delays[] = {60000, 300000, 600000};
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        buddy_state_t state;
+        buddy_action_t action;
+        buddy_settings_snapshot_t settings = {.sleep_mode = mode};
+        buddy_event_t hb = {.type = BUDDY_EVENT_HEARTBEAT};
+        hb.heartbeat.connected = true;
+        hb.heartbeat.running = 1;
+        hb.heartbeat.codex_usage.present = true;
+        buddy_state_init(&state, &settings);
+        buddy_state_reduce(&state, &hb, 100, &action);
+        for (uint64_t t = 101; t < 100 + delays[mode]; t += 1000)
+            buddy_state_reduce(&state, &hb, t, &action);
+        buddy_state_reduce(&state, &hb, 100 + delays[mode] - 1, &action);
+        assert(!state.screen_dimmed && !state.screen_off);
+        buddy_state_reduce(&state, &hb, 100 + delays[mode], &action);
+        assert(state.screen_dimmed && !state.screen_off && state.brightness_level == 4);
+        buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_UP};
+        buddy_page_t page = state.page;
+        buddy_state_reduce(&state, &key, 101 + delays[mode], &action);
+        assert(!state.screen_dimmed && state.page == page);
+        for (uint64_t t = 102 + delays[mode]; t < 101 + 2 * delays[mode]; t += 1000)
+            buddy_state_reduce(&state, &hb, t, &action);
+        buddy_state_reduce(&state, &hb, 101 + 2 * delays[mode], &action);
+        assert(state.screen_dimmed);
+        hb.heartbeat.codex_usage.completion_sequence++;
+        buddy_state_reduce(&state, &hb, 102 + 2 * delays[mode], &action);
+        assert(!state.screen_dimmed && action.play_completion_sound);
+        hb.heartbeat.running = 0;
+        buddy_state_reduce(&state, &hb, 103 + 2 * delays[mode], &action);
+        assert(!state.screen_dimmed && !state.screen_off);
+        buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
+        buddy_state_reduce(&state, &tick, 103 + 3 * delays[mode], &action);
+        assert(state.screen_off);
+        settings.sleep_mode = BUDDY_SLEEP_NEVER;
+        buddy_state_init(&state, &settings);
+        hb.heartbeat.running = 1;
+        buddy_state_reduce(&state, &hb, 1, &action);
+        buddy_state_reduce(&state, &hb, 9999999, &action);
+        assert(!state.screen_dimmed && !state.screen_off);
+    }
+}
+
 static void test_idle_sleep_and_wake(void)
 {
     buddy_state_t state;
@@ -1157,6 +1202,7 @@ static void test_switching_computers_rebases_completion_counter(void)
 int main(void)
 {
     test_connection_chime_once_per_live_session();
+    test_work_dimming_uses_sleep_timer();
     test_switching_computers_rebases_completion_counter();
     test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();

@@ -300,7 +300,7 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     buddy_sprite_bounds_t bounds;
     uint8_t state = art_state(s->character);
     int x = 88;
-    const char *caption = "Ready";
+    const char *caption = "准备就绪";
     lv_color_t color = COL_DIM;
 
     if (buddy_sprite_bounds(s->species, state, s_tick, &bounds)) {
@@ -309,12 +309,12 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     rule(layer, 96, 255, 48, COL_LINE);
     buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, 188);
     if (!(s->ble_connected || s->lan_connected) || s->heartbeat_stale) {
-        caption = "Waiting for sync";
+        caption = "等待同步";
     } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
-        caption = "Task complete";
+        caption = "任务完成";
         color = COL_GREEN;
     } else if (s->running > 0U) {
-        caption = "Working...";
+        caption = "工作中…";
         color = COL_GREEN;
     }
     text(layer, 18, 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
@@ -332,7 +332,7 @@ static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
          value, false, LV_TEXT_ALIGN_CENTER);
     if (count == 0U) {
         wrapped_text(layer, 22, 113, 196, COL_INK,
-                     "Usage unavailable.\nKeep the bridge running.", 5);
+                     "暂无用量数据。\n请保持桥接程序运行。", 5);
     }
     for (size_t index = 0; index < count; ++index) {
         const buddy_usage_window_t *window = &windows[index];
@@ -362,24 +362,24 @@ static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     char body[512];
     char page[16];
     unsigned p = s->info_page < 6 ? s->info_page : 0;
-    text(layer, 14, 38, 180, COL_ORANGE, p == 4 ? "Wi-Fi / LAN" : titles[p], true, LV_TEXT_ALIGN_LEFT);
+    text(layer, 14, 38, 180, COL_ORANGE, p == 4 ? "无线网络" : titles[p], true, LV_TEXT_ALIGN_LEFT);
     snprintf(page, sizeof(page), "%u / 6", p + 1);
     text(layer, 174, 43, 52, COL_DIM, page, false, LV_TEXT_ALIGN_RIGHT);
     rule(layer, 14, 66, 212, COL_LINE);
     switch (p) {
-    case 0: snprintf(body, sizeof(body), "Your desk companion.\n\nShows available usage windows and task completion alerts."); break;
+    case 0: snprintf(body, sizeof(body), "你的桌面伙伴。\n\n显示用量余量和任务完成提醒。"); break;
     case 1: snprintf(body, sizeof(body), "上键：切换界面\n下键：翻页或拒绝\n确认键：允许或更改\n长按确认键：打开菜单"); break;
     case 2: {
         buddy_usage_window_t windows[2];
         size_t count = buddy_usage_windows(&s->codex_usage, windows);
         size_t used = (size_t)snprintf(body, sizeof(body),
-            "Tasks: %u\nRunning: %u\n", s->total, s->running);
+            "任务：%u\n进行中：%u\n", s->total, s->running);
         if (count == 0U) {
-            snprintf(body + used, sizeof(body) - used, "\nUsage unavailable.");
+            snprintf(body + used, sizeof(body) - used, "\n暂无用量数据。");
         }
         for (size_t i = 0; i < count && used < sizeof(body); ++i) {
             int written = snprintf(body + used, sizeof(body) - used,
-                "\n%s left: %u%%", windows[i].label, windows[i].remaining);
+                "\n%s 剩余：%u%%", windows[i].label, windows[i].remaining);
             if (written < 0) break;
             used += (size_t)written;
         }
@@ -387,15 +387,15 @@ static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     }
     case 3: snprintf(body, sizeof(body), "名称\n%s\n\n所有者\n%s\n\n屏幕：240 × 320", s->name[0] ? s->name : "Codex 助手", s->owner[0] ? s->owner : "-"); break;
     case 4: if (s->lan_setup) {
-        snprintf(body, sizeof(body), "Join hotspot:\nPassport Setup\n\nPassword:\n%s\n\nhttp://192.168.4.1\n\nCloses in 10 minutes\nOK: exit setup", s->lan_setup_password);
+        snprintf(body, sizeof(body), "连接热点：\nPassport Setup\n\n密码：\n%s\n\nhttp://192.168.4.1\n\n10 分钟后关闭\n确认键：退出配网", s->lan_setup_password);
         break;
     } else if (s->lan_mode) {
-        snprintf(body, sizeof(body), "Wi-Fi / LAN\n\nIP: %s\nPort: 8765\n\n%s\n\nOK: Wi-Fi setup",
-                 s->lan_ip[0] ? s->lan_ip : "Connecting...",
-                 s->lan_connected ? "Encrypted link" : "Waiting for bridge");
+        snprintf(body, sizeof(body), "无线网络\n\nIP：%s\n端口：8765\n\n%s\n\n确认键：无线配网",
+                 s->lan_ip[0] ? s->lan_ip : "连接中…",
+                 s->lan_connected ? "已加密连接" : "等待桥接连接");
         break;
     }
-    snprintf(body, sizeof(body), "Current: Bluetooth\n\nOK: Wi-Fi setup\n\nJoin the device hotspot\nwith your phone to set\nup a 2.4 GHz network.\n\nUSB setup also available."); break;
+    snprintf(body, sizeof(body), "当前：蓝牙\n\n确认键：无线配网\n\n手机连接设备热点\n设置 2.4 GHz 无线网络。\n\n也可通过 USB 配网。"); break;
     default: snprintf(body, sizeof(body), "Codex 使用量助手\n\n适用于 FoloToy AI Passport\nESP32-C3 硬件\n\n基于公开的 Buddy 参考分支"); break;
     }
     wrapped_text(layer, 16, 82 - s_scroll, 208, COL_INK, body, 18);
@@ -416,12 +416,12 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
         const char *suffix = "";
         char value[12];
         if (!s->reset_open && i == BUDDY_SETTINGS_BRIGHTNESS) { snprintf(value, sizeof(value), "%u/4", s->brightness_level); suffix = value; }
-        else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "Off" : (s->sound_mode == BUDDY_SOUND_ON ? "On" : "Auto");
+        else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "关闭" : (s->sound_mode == BUDDY_SOUND_ON ? "开启" : "自动");
         else if (!s->reset_open && i == BUDDY_SETTINGS_SLEEP) {
-            static const char *const modes[] = {"1 min", "5 min", "10 min", "Never"};
+            static const char *const modes[] = {"1 分钟", "5 分钟", "10 分钟", "永不"};
             suffix = modes[s->sleep_mode < BUDDY_SLEEP_COUNT ? s->sleep_mode : BUDDY_SLEEP_5_MIN];
         }
-        else if (!s->reset_open && i == BUDDY_SETTINGS_WIFI) suffix = s->lan_mode ? "LAN" : "Setup";
+        else if (!s->reset_open && i == BUDDY_SETTINGS_WIFI) suffix = s->lan_mode ? "局域网" : "配网";
         else if (!s->reset_open && i == BUDDY_SETTINGS_BLE) suffix = s->ble_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_TRANSCRIPT) suffix = s->transcript_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_ASCII_PET) suffix = buddy_sprite_name(s->species);
@@ -435,7 +435,7 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
 
 static void draw_settings(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
 {
-    static const char *const settings[] = {"屏幕亮度", "声音", "Auto sleep", "蓝牙", "无线网络", "指示灯", "任务记录", "时钟旋转", "伙伴形象", "重置", "返回"};
+    static const char *const settings[] = {"屏幕亮度", "声音", "自动睡眠", "蓝牙", "无线网络", "指示灯", "任务记录", "时钟旋转", "伙伴形象", "重置", "返回"};
     static const char *const reset[] = {"删除自定义角色", "恢复出厂设置", "解除蓝牙配对", "返回"};
     draw_list(layer, s->reset_open ? "重置" : "设置", s->reset_open ? reset : settings,
               s->reset_open ? BUDDY_RESET_COUNT : BUDDY_SETTINGS_COUNT,

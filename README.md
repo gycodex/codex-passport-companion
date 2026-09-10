@@ -117,3 +117,7 @@ This repository adds adaptive usage windows, a home-screen pixel pet, completion
 ## Local enhancement: soft completion chime
 
 Settings > Sound cycles Off / On / Auto and persists the selection. Auto is the default: quiet from 22:00 to 08:00 in the computer-synchronized local time, and silent until time is known. New live completions play a short, low-volume two-note chime on a dedicated worker. Duplicate snapshots and reconnect catch-up do not replay sounds; bursts are coalesced.
+
+### Working dim mode
+
+The existing 1/5/10 minute auto-sleep setting dims active work to the minimum 20% backlight after the timer expires, while idle time still turns the display off. Routine heartbeats do not restart the timer. Completion, a transition to idle, a key press, or an attention prompt restores the selected brightness. Never disables both automatic behaviors. Device menus, status text and provisioning pages use Simplified Chinese.

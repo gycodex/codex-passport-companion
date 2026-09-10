@@ -450,13 +450,13 @@ static esp_err_t portal_session(httpd_req_t *req)
 }
 static esp_err_t portal_scan(httpd_req_t *req)
 {
-    if (!portal_authorized(req)) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Open the setup page first");
+    if (!portal_authorized(req)) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "请先打开配网页面");
     wifi_scan_config_t scan = {.show_hidden=false};
     if (esp_wifi_scan_start(&scan, true) != ESP_OK)
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Scan unavailable; enter SSID manually");
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "暂时无法扫描，请手动填写网络名称");
     uint16_t count = 12;
     wifi_ap_record_t *records = calloc(count, sizeof(*records));
-    if (!records) { esp_wifi_clear_ap_list(); return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Low memory"); }
+    if (!records) { esp_wifi_clear_ap_list(); return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "可用内存不足"); }
     esp_err_t err = esp_wifi_scan_get_ap_records(&count, records);
     cJSON *list = cJSON_CreateArray();
     if (err == ESP_OK && list) {
@@ -473,16 +473,16 @@ static esp_err_t portal_scan(httpd_req_t *req)
     free(records);
     char *body = list && err == ESP_OK ? cJSON_PrintUnformatted(list) : NULL;
     cJSON_Delete(list);
-    esp_err_t sent = body ? portal_json(req, body) : httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Scan failed");
+    esp_err_t sent = body ? portal_json(req, body) : httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "扫描失败");
     free(body);
     return sent;
 }
 static esp_err_t portal_save(httpd_req_t *req)
 {
-    if (!portal_authorized(req)) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid setup session");
+    if (!portal_authorized(req)) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "配网会话已失效，请刷新页面");
     char body[512];
     if (req->content_len == 0 || req->content_len >= sizeof(body))
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid form size");
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "提交内容大小无效");
     size_t used = 0;
     while (used < req->content_len) {
         int n = httpd_req_recv(req, body+used, req->content_len-used);
@@ -513,14 +513,14 @@ static esp_err_t portal_save(httpd_req_t *req)
     cJSON_Delete(json);
     memset(body, 0, sizeof(body)); memset(&config, 0, sizeof(config));
     if (err != ESP_OK) return httpd_resp_send_err(req, valid ? HTTPD_500_INTERNAL_SERVER_ERROR : HTTPD_400_BAD_REQUEST,
-                                                "Not saved; check SSID and password length");
+                                                "保存失败，请检查网络名称及密码长度");
     atomic_store(&s_setup_saved, true);
     return portal_json(req, "{\"saved\":true}");
 }
 static esp_err_t portal_key(httpd_req_t *req)
 {
     if (!portal_authorized(req) || !atomic_load(&s_setup_saved))
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Save network first");
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "请先保存网络");
     char key[65], body[100];
     encode(s_config.key, key, 32);
     snprintf(body, sizeof(body), "{\"key\":\"%s\",\"port\":8765}", key);
@@ -530,7 +530,7 @@ static esp_err_t portal_key(httpd_req_t *req)
 }
 static esp_err_t portal_restart(httpd_req_t *req)
 {
-    if (!portal_authorized(req)) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid setup session");
+    if (!portal_authorized(req)) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "配网会话已失效，请刷新页面");
     esp_err_t err = portal_json(req, "{\"restarting\":true}");
     atomic_store(&s_setup_exit, true);
     return err;

@@ -873,7 +873,7 @@ static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
 static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *action,
                                  buddy_event_t *result_event)
 {
-    static bool applied_screen_off;
+    static int applied_brightness = -1;
     if (action->type == BUDDY_ACTION_LAN_SETUP) {
         if (s_lan_setup || buddy_lan_request_setup() == ESP_OK) {
             (void)buddy_settings_flush(true);
@@ -881,9 +881,11 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
         }
         return false;
     }
-    if (applied_screen_off != state->screen_off) {
-        bsp_display_backlight(state->screen_off ? 0U : (20U + state->brightness_level * 20U));
-        applied_screen_off = state->screen_off;
+    unsigned brightness = state->screen_off ? 0U :
+                          state->screen_dimmed ? 20U : (20U + state->brightness_level * 20U);
+    if (applied_brightness != (int)brightness) {
+        bsp_display_backlight(brightness);
+        applied_brightness = (int)brightness;
     }
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
     uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000ULL;

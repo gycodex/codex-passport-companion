@@ -353,12 +353,14 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
                          ? heartbeat->codex_usage.completion_sequence
                          : heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;
 
-    if (heartbeat->connected && (heartbeat->running > 0U || heartbeat->waiting > 0U ||
+    if (heartbeat->connected && (((heartbeat->running > 0U || heartbeat->waiting > 0U) &&
+            (!was_live || (state->running == 0U && state->waiting == 0U))) ||
             (was_live && level > state->highest_celebrated_level))) {
         state->screen_off = false;
         state->last_activity_ms = now_ms;
     }
-    if (was_live && (state->running > 0U || state->waiting > 0U)) {
+    if (was_live && (state->running > 0U || state->waiting > 0U) &&
+            heartbeat->running == 0U && heartbeat->waiting == 0U) {
         state->last_activity_ms = now_ms;
     }
     state->heartbeat = *heartbeat;
@@ -541,8 +543,9 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
     buddy_clear_stale_prompt(state, now_ms);
     if (event->type == BUDDY_EVENT_KEY_CLICK || event->type == BUDDY_EVENT_KEY_LONG) {
         state->last_activity_ms = now_ms;
-        if (state->screen_off) {
+        if (state->screen_off || state->screen_dimmed) {
             state->screen_off = false;
+            state->screen_dimmed = false;
             if (action != NULL) {
                 action->type = BUDDY_ACTION_DISPLAY_BACKLIGHT;
                 action->brightness_percent = (uint8_t)(20U + state->brightness_level * 20U);
@@ -658,8 +661,9 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
         buddy_apply_permission_result(state, &event->permission_result, now_ms, action);
         break;
     case BUDDY_EVENT_KEY_CLICK:
-        if (state->screen_off) {
+        if (state->screen_off || state->screen_dimmed) {
             state->screen_off = false;
+            state->screen_dimmed = false;
             if (action != NULL) {
                 action->type = BUDDY_ACTION_DISPLAY_BACKLIGHT;
                 action->brightness_percent =
@@ -731,18 +735,21 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
                      state->confirmation != BUDDY_CONFIRM_NONE;
     bool working = state->connected && !state->heartbeat_stale &&
                    (state->running > 0U || state->waiting > 0U);
-    if (attention) state->screen_off = false;
-    if (working || attention || state->lan_setup) {
+    static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
+    uint8_t mode = state->settings.sleep_mode < BUDDY_SLEEP_COUNT
+                       ? state->settings.sleep_mode : BUDDY_SLEEP_5_MIN;
+    uint64_t delay = delays[mode];
+    bool expired = delay != 0U && now_ms >= state->last_activity_ms &&
+                   now_ms - state->last_activity_ms >= delay;
+    if (attention || state->lan_setup) {
+        state->screen_off = false;
+        state->screen_dimmed = false;
         state->last_activity_ms = now_ms;
+    } else if (working) {
+        state->screen_dimmed = expired;
     } else {
-        static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
-        uint8_t mode = state->settings.sleep_mode < BUDDY_SLEEP_COUNT
-                           ? state->settings.sleep_mode : BUDDY_SLEEP_5_MIN;
-        uint64_t delay = delays[mode];
-        if (delay != 0U && now_ms >= state->last_activity_ms &&
-                now_ms - state->last_activity_ms >= delay) {
-            state->screen_off = true;
-        }
+        state->screen_dimmed = false;
+        if (expired) state->screen_off = true;
     }
     buddy_refresh_character(state, now_ms);
 }

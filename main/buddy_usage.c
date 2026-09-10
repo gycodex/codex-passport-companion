@@ -20,13 +20,13 @@ size_t buddy_usage_windows(const buddy_codex_usage_t *usage,
         if (minutes == 0U) continue;
         buddy_usage_window_t *window = &windows[count++];
         unsigned amount = minutes;
-        const char *unit = "min";
+        const char *unit = "分钟";
         if (minutes % 1440U == 0U) {
             amount = minutes / 1440U;
-            unit = amount == 1U ? "day" : "days";
+            unit = "天";
         } else if (minutes % 60U == 0U) {
             amount = minutes / 60U;
-            unit = amount == 1U ? "hour" : "hours";
+            unit = "小时";
         }
         snprintf(window->label, sizeof(window->label), "%u %s", amount, unit);
         window->remaining = used[i] > 100U ? 0U : 100U - used[i];
