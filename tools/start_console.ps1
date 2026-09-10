@@ -29,7 +29,8 @@ try {
             }
         }
         foreach ($command in @(Get-Command python,python3 -ErrorAction SilentlyContinue)) {
-            if ($command.Source -notlike '*\WindowsApps\*') { $candidates += $command.Source }
+            # WindowsApps can contain a working Python install; validate by running it.
+            $candidates += $command.Source
         }
         $selected = $candidates | Where-Object { Test-ConsolePython $_ } | Select-Object -First 1
         if (-not $selected) { throw 'Python 3.10+ is required. Install a current Python from python.org and retry.' }
