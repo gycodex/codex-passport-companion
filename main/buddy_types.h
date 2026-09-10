@@ -262,6 +262,7 @@ typedef struct {
     bool ble_enabled;
     bool confirmation_acknowledge;
     bool play_completion_sound;
+    bool play_connection_sound;
 } buddy_action_t;
 
 typedef struct {

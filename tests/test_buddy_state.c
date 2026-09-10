@@ -972,6 +972,36 @@ static void test_new_link_generation_invalidates_sensitive_state_when_disconnect
     assert(!state.confirmation_pending);
 }
 
+static void test_connection_chime_once_per_live_session(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_settings_snapshot_t settings = {0};
+    buddy_event_t heartbeat = {.type = BUDDY_EVENT_HEARTBEAT};
+    heartbeat.heartbeat.connected = true;
+    heartbeat.heartbeat.codex_usage.present = true;
+    buddy_state_init(&state, &settings);
+    buddy_state_reduce(&state, &heartbeat, 100, &action);
+    assert(action.play_connection_sound && !action.play_completion_sound);
+    buddy_state_reduce(&state, &heartbeat, 200, &action);
+    assert(!action.play_connection_sound);
+    buddy_event_t lost = {.type = BUDDY_EVENT_LAN_DISCONNECTED};
+    buddy_state_reduce(&state, &lost, 300, &action);
+    assert(!action.play_connection_sound);
+    buddy_state_reduce(&state, &heartbeat, 400, &action);
+    assert(action.play_connection_sound);
+    lost.type = BUDDY_EVENT_BLE_DISCONNECTED;
+    buddy_state_reduce(&state, &lost, 500, &action);
+    buddy_state_reduce(&state, &heartbeat, 600, &action);
+    assert(action.play_connection_sound);
+    state.heartbeat_stale = true;
+    buddy_state_reduce(&state, &heartbeat, 700, &action);
+    assert(action.play_connection_sound);
+    heartbeat.heartbeat.connected = false;
+    buddy_state_reduce(&state, &heartbeat, 800, &action);
+    assert(!action.play_connection_sound);
+}
+
 static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
 {
     buddy_state_t state;
@@ -1126,6 +1156,7 @@ static void test_switching_computers_rebases_completion_counter(void)
 
 int main(void)
 {
+    test_connection_chime_once_per_live_session();
     test_switching_computers_rebases_completion_counter();
     test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();

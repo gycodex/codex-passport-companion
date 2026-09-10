@@ -11,6 +11,8 @@ Window labels follow the reported duration; absent windows are hidden instead of
 
 Current branch firmware version: **0.2.0-lan**.
 
+The first live Codex heartbeat after connecting or reconnecting over BLE/LAN plays a short 100 ms connection note. Routine heartbeats stay quiet. The note follows the existing sound mode and automatic quiet hours.
+
 **Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. No firmware update is required for the panel. See [setup and validation notes](docs/CONSOLE.md).
 
 **LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.

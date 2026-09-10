@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+enum { SOUND_CONNECTED = 1U, SOUND_COMPLETED = 2U };
 static TaskHandle_t s_worker;
 static atomic_uint s_stage;
 static atomic_uint s_play_count;
@@ -43,7 +44,8 @@ static void sound_worker(void *context)
     bool initialized = false;
     bool failed = false;
     for (;;) {
-        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        uint32_t pending = 0;
+        (void)xTaskNotifyWait(0, UINT32_MAX, &pending, portMAX_DELAY);
         if (failed) continue;
         esp_err_t err = ESP_OK;
         if (!initialized) {
@@ -59,9 +61,13 @@ static void sound_worker(void *context)
              * 25 was almost inaudible with the already attenuated PCM. */
             bsp_audio_set_volume(80);
             atomic_store(&s_stage, 4);
-            err = tone(660, 1280);
-            if (err == ESP_OK) err = tone(0, 320);
-            if (err == ESP_OK) err = tone(880, 1280);
+            if (pending & SOUND_COMPLETED) {
+                err = tone(660, 1280);
+                if (err == ESP_OK) err = tone(0, 320);
+                if (err == ESP_OK) err = tone(880, 1280);
+            } else {
+                err = tone(880, 1600); /* One 100 ms connection note. */
+            }
             /* Drain the DMA tail before muting to avoid a clipped last note. */
             if (err == ESP_OK) err = tone(0, 1600);
             vTaskDelay(pdMS_TO_TICKS(100));
@@ -74,20 +80,24 @@ static void sound_worker(void *context)
         } else {
             atomic_store(&s_stage, 5);
             atomic_fetch_add(&s_play_count, 1);
-            ESP_LOGI(TAG, "Completion chime played");
+            ESP_LOGI(TAG, "%s chime played", (pending & SOUND_COMPLETED) ? "Completion" : "Connection");
         }
         /* Coalesce bursts of simultaneous completions into one soft reminder. */
+        if (!(pending & SOUND_COMPLETED)) continue;
         vTaskDelay(pdMS_TO_TICKS(2000));
-        (void)ulTaskNotifyTake(pdTRUE, 0);
+        (void)xTaskNotifyWait(0, UINT32_MAX, &pending, 0);
     }
 }
 
-void buddy_sound_notify(void)
+static void notify_sound(uint32_t kind)
 {
     if (s_worker == NULL && xTaskCreate(sound_worker, "buddy_sound", 6144, NULL,
                                        3, &s_worker) != pdPASS) {
         ESP_LOGW(TAG, "Unable to allocate audio worker");
         return;
     }
-    xTaskNotifyGive(s_worker);
+    xTaskNotify(s_worker, kind, eSetBits);
 }
+
+void buddy_sound_notify(void) { notify_sound(SOUND_COMPLETED); }
+void buddy_sound_notify_connected(void) { notify_sound(SOUND_CONNECTED); }

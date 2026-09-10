@@ -345,6 +345,10 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
                                   buddy_action_t *action)
 {
     bool was_live = state->connected && !state->heartbeat_stale;
+    /* A live heartbeat confirms that the authenticated host bridge is ready. */
+    if (action != NULL) {
+        action->play_connection_sound = !was_live && heartbeat->connected && heartbeat->codex_usage.present;
+    }
     uint64_t level = heartbeat->codex_usage.present
                          ? heartbeat->codex_usage.completion_sequence
                          : heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;

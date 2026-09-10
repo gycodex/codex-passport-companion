@@ -887,9 +887,10 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
     }
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
     uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000ULL;
-    if (action->play_completion_sound && buddy_alert_allowed(state->settings.sound_mode,
+    if ((action->play_completion_sound || action->play_connection_sound) && buddy_alert_allowed(state->settings.sound_mode,
             state->epoch_seconds, state->timezone_offset_seconds, state->time_received_ms, now_ms)) {
-        buddy_sound_notify();
+        if (action->play_completion_sound) buddy_sound_notify();
+        else buddy_sound_notify_connected();
     }
 
     if (action->type == BUDDY_ACTION_DISPLAY_BACKLIGHT) {
