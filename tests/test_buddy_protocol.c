@@ -401,7 +401,7 @@ static void test_device_status_omits_unavailable_battery_fields(void)
     assert(strcmp(json,
                   "{\"ack\":\"status\",\"ok\":true,\"data\":{"
                   "\"name\":\"Buddy\",\"sec\":true,"
-                  "\"sys\":{\"up\":123,\"heap\":32000},"
+                  "\"sys\":{\"up\":123,\"heap\":32000,\"screen_off\":false,\"sleep_mode\":0},"
                   "\"sound\":{\"mode\":0,\"stage\":0,\"played\":0},"
                   "\"stats\":{\"appr\":7,\"deny\":2,\"lvl\":0}}}\n") == 0);
     assert(strstr(json, "\"bat\"") == NULL);
@@ -411,7 +411,7 @@ static void test_device_status_omits_unavailable_battery_fields(void)
     status.battery_mv = 3875;
     assert(buddy_protocol_device_status_json(json, sizeof(json), &status) > 0);
     assert(strstr(json, "\"bat\":{\"pct\":73,\"mV\":3875}") != NULL);
-    assert(strstr(json, "\"sys\":{\"up\":123,\"heap\":32000}") != NULL);
+    assert(strstr(json, "\"sys\":{\"up\":123,\"heap\":32000,\"screen_off\":false,\"sleep_mode\":0}") != NULL);
 }
 
 static void test_task_tx_capacity_handles_worst_case_escaping(void)

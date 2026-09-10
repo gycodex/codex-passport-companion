@@ -408,6 +408,10 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
         char value[12];
         if (!s->reset_open && i == BUDDY_SETTINGS_BRIGHTNESS) { snprintf(value, sizeof(value), "%u/4", s->brightness_level); suffix = value; }
         else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "Off" : (s->sound_mode == BUDDY_SOUND_ON ? "On" : "Auto");
+        else if (!s->reset_open && i == BUDDY_SETTINGS_SLEEP) {
+            static const char *const modes[] = {"1 min", "5 min", "10 min", "Never"};
+            suffix = modes[s->sleep_mode < BUDDY_SLEEP_COUNT ? s->sleep_mode : BUDDY_SLEEP_5_MIN];
+        }
         else if (!s->reset_open && i == BUDDY_SETTINGS_BLE) suffix = s->ble_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_TRANSCRIPT) suffix = s->transcript_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_ASCII_PET) suffix = buddy_sprite_name(s->species);
@@ -421,7 +425,7 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
 
 static void draw_settings(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
 {
-    static const char *const settings[] = {"屏幕亮度", "声音", "蓝牙", "无线网络", "指示灯", "任务记录", "时钟旋转", "伙伴形象", "重置", "返回"};
+    static const char *const settings[] = {"屏幕亮度", "声音", "Auto sleep", "蓝牙", "无线网络", "指示灯", "任务记录", "时钟旋转", "伙伴形象", "重置", "返回"};
     static const char *const reset[] = {"删除自定义角色", "恢复出厂设置", "解除蓝牙配对", "返回"};
     draw_list(layer, s->reset_open ? "重置" : "设置", s->reset_open ? reset : settings,
               s->reset_open ? BUDDY_RESET_COUNT : BUDDY_SETTINGS_COUNT,
@@ -535,7 +539,7 @@ void buddy_ui_render(const buddy_ui_snapshot_t *snapshot)
     s_snapshot = *snapshot;
     s_have_snapshot = true;
     s_scroll = 0;
-    redraw();
+    if (!snapshot->screen_off) redraw();
 }
 
 void buddy_ui_show_passkey(uint32_t passkey)
@@ -548,7 +552,7 @@ void buddy_ui_tick(uint64_t elapsed_ms)
 {
     uint32_t tick = (uint32_t)(elapsed_ms / 200U);
     s_elapsed_ms = elapsed_ms;
-    if (tick != s_tick) {
+    if (tick != s_tick && !s_snapshot.screen_off) {
         s_tick = tick;
         redraw();
     }

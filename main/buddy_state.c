@@ -215,6 +215,13 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             action->brightness_percent = (uint8_t)(20U + state->brightness_level * 20U);
         }
         break;
+    case BUDDY_SETTINGS_SLEEP:
+        state->settings.sleep_mode = (uint8_t)((state->settings.sleep_mode + 1U) % BUDDY_SLEEP_COUNT);
+        if (action != NULL) {
+            action->type = BUDDY_ACTION_SETTINGS;
+            action->settings = state->settings;
+        }
+        break;
     case BUDDY_SETTINGS_SOUND:
         state->settings.sound_mode = (uint8_t)((state->settings.sound_mode + 1U) % BUDDY_SOUND_COUNT);
         if (action != NULL) {
@@ -336,6 +343,14 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
                          ? heartbeat->codex_usage.completion_sequence
                          : heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;
 
+    if (heartbeat->connected && (heartbeat->running > 0U || heartbeat->waiting > 0U ||
+            (was_live && level > state->highest_celebrated_level))) {
+        state->screen_off = false;
+        state->last_activity_ms = now_ms;
+    }
+    if (was_live && (state->running > 0U || state->waiting > 0U)) {
+        state->last_activity_ms = now_ms;
+    }
     state->heartbeat = *heartbeat;
     state->connected = heartbeat->connected;
     state->connection = heartbeat->connected ? BUDDY_CONNECTION_CONNECTED : BUDDY_CONNECTION_OFFLINE;
@@ -480,6 +495,7 @@ void buddy_state_init(buddy_state_t *state, const buddy_settings_snapshot_t *set
     state->page = BUDDY_PAGE_HOME;
     state->heartbeat_stale = true;
     state->brightness_level = 4;
+    state->settings.sleep_mode = BUDDY_SLEEP_5_MIN;
     state->transcript_enabled = true;
     if (settings != NULL) {
         state->settings = *settings;
@@ -501,6 +517,17 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
     }
 
     buddy_clear_stale_prompt(state, now_ms);
+    if (event->type == BUDDY_EVENT_KEY_CLICK || event->type == BUDDY_EVENT_KEY_LONG) {
+        state->last_activity_ms = now_ms;
+        if (state->screen_off) {
+            state->screen_off = false;
+            if (action != NULL) {
+                action->type = BUDDY_ACTION_DISPLAY_BACKLIGHT;
+                action->brightness_percent = (uint8_t)(20U + state->brightness_level * 20U);
+            }
+            return; /* Consume the wake gesture, including a long press. */
+        }
+    }
 
     switch (event->type) {
     case BUDDY_EVENT_HEARTBEAT:
@@ -670,6 +697,23 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
         break;
     }
 
+    bool attention = buddy_has_actionable_prompt(state) || state->passkey_visible ||
+                     state->confirmation != BUDDY_CONFIRM_NONE;
+    bool working = state->connected && !state->heartbeat_stale &&
+                   (state->running > 0U || state->waiting > 0U);
+    if (attention) state->screen_off = false;
+    if (working || attention) {
+        state->last_activity_ms = now_ms;
+    } else {
+        static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
+        uint8_t mode = state->settings.sleep_mode < BUDDY_SLEEP_COUNT
+                           ? state->settings.sleep_mode : BUDDY_SLEEP_5_MIN;
+        uint64_t delay = delays[mode];
+        if (delay != 0U && now_ms >= state->last_activity_ms &&
+                now_ms - state->last_activity_ms >= delay) {
+            state->screen_off = true;
+        }
+    }
     buddy_refresh_character(state, now_ms);
 }
 
@@ -683,6 +727,7 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     snapshot->connection = state->connection;
     snapshot->character = state->character;
     snapshot->sound_mode = state->settings.sound_mode;
+    snapshot->sleep_mode = state->settings.sleep_mode;
     snapshot->page = state->page;
     snapshot->running = state->running;
     snapshot->total = state->total;

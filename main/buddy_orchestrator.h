@@ -23,6 +23,7 @@ typedef struct {
     esp_err_t (*factory_reset)(void *context);
     esp_err_t (*set_ble_enabled)(void *context, bool enabled);
     esp_err_t (*persist_level)(void *context, uint64_t level);
+    esp_err_t (*persist_sleep)(void *context, uint8_t mode);
     esp_err_t (*persist_sound)(void *context, uint8_t mode);
 } buddy_orchestrator_ops_t;
 

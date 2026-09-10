@@ -836,7 +836,7 @@ static void test_original_settings_surface_is_complete_and_bounded(void)
     buddy_action_t action = {0};
     buddy_event_t ok = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
 
-    assert(BUDDY_SETTINGS_COUNT == 10);
+    assert(BUDDY_SETTINGS_COUNT == 11);
     assert(BUDDY_RESET_COUNT == 4);
     buddy_state_init(&state, NULL);
     state.page = BUDDY_PAGE_SETTINGS;
@@ -997,8 +997,77 @@ static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
     assert(action.type == BUDDY_ACTION_SETTINGS && action.settings.sound_mode == BUDDY_SOUND_OFF);
 }
 
+static void test_idle_sleep_and_wake(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_settings_snapshot_t settings = {.sleep_mode = BUDDY_SLEEP_5_MIN};
+    buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
+    buddy_event_t heartbeat = {.type = BUDDY_EVENT_HEARTBEAT};
+    buddy_event_t key = {.type = BUDDY_EVENT_KEY_LONG, .key = BUDDY_KEY_OK};
+    heartbeat.heartbeat.connected = true;
+    heartbeat.heartbeat.codex_usage.present = true;
+    buddy_state_init(&state, &settings);
+    /* Idle heartbeats must not postpone sleep. */
+    for (uint64_t t = 1000; t < 300000; t += 1000) {
+        buddy_state_reduce(&state, &heartbeat, t, &action);
+        assert(!state.screen_off);
+    }
+    buddy_state_reduce(&state, &tick, 300000, &action);
+    assert(state.screen_off);
+    buddy_state_reduce(&state, &key, 300001, &action);
+    assert(!state.screen_off && !state.menu_open);
+    assert(action.type == BUDDY_ACTION_DISPLAY_BACKLIGHT);
+    /* A live task wakes the screen and prevents sleeping for its duration. */
+    state.screen_off = true;
+    heartbeat.heartbeat.running = 1;
+    for (uint64_t t = 301000; t < 1000000; t += 1000) {
+        buddy_state_reduce(&state, &heartbeat, t, &action);
+        assert(!state.screen_off);
+    }
+    heartbeat.heartbeat.running = 0;
+    heartbeat.heartbeat.codex_usage.completion_sequence = 1;
+    state.screen_off = true;
+    buddy_state_reduce(&state, &heartbeat, 1000000, &action);
+    assert(!state.screen_off && action.play_completion_sound);
+    assert(action.type == BUDDY_ACTION_SETTINGS); /* Wake does not lose completion persistence. */
+    buddy_state_reduce(&state, &tick, 1299999, &action);
+    assert(!state.screen_off);
+    buddy_state_reduce(&state, &tick, 1300000, &action);
+    assert(state.screen_off);
+    /* Repeated completion IDs must not wake the screen. */
+    buddy_state_reduce(&state, &heartbeat, 1300001, &action);
+    assert(state.screen_off);
+    /* A click used to wake must not change the page. */
+    key.type = BUDDY_EVENT_KEY_CLICK; key.key = BUDDY_KEY_UP;
+    buddy_page_t page = state.page;
+    buddy_state_reduce(&state, &key, 1300002, &action);
+    assert(!state.screen_off && state.page == page);
+    state.settings.sleep_mode = BUDDY_SLEEP_NEVER;
+    buddy_state_reduce(&state, &tick, 9999999, &action);
+    assert(!state.screen_off);
+    /* Every timed option expires at its own boundary. */
+    const uint64_t deadlines[] = {60000, 300000, 600000};
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        settings.sleep_mode = mode;
+        buddy_state_init(&state, &settings);
+        buddy_state_reduce(&state, &tick, deadlines[mode] - 1, &action);
+        assert(!state.screen_off);
+        buddy_state_reduce(&state, &tick, deadlines[mode], &action);
+        assert(state.screen_off);
+    }
+    state.page = BUDDY_PAGE_SETTINGS;
+    state.settings_selection = BUDDY_SETTINGS_SLEEP;
+    key.key = BUDDY_KEY_OK;
+    buddy_state_reduce(&state, &key, 600001, &action); /* Wake only. */
+    buddy_state_reduce(&state, &key, 600002, &action);
+    assert(state.settings.sleep_mode == BUDDY_SLEEP_NEVER);
+    assert(action.type == BUDDY_ACTION_SETTINGS);
+}
+
 int main(void)
 {
+    test_idle_sleep_and_wake();
     test_completion_sound_is_an_edge_not_a_replayed_snapshot();
     test_offline_initialization();
     test_heartbeat_mapping();

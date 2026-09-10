@@ -716,6 +716,10 @@ int buddy_protocol_device_status_json(char *json, size_t size,
     buddy_writer_u64(&writer, status->uptime_ms / 1000U);
     buddy_writer_literal(&writer, ",\"heap\":");
     buddy_writer_u64(&writer, status->free_heap);
+    buddy_writer_literal(&writer, ",\"screen_off\":");
+    buddy_writer_bool(&writer, status->screen_off);
+    buddy_writer_literal(&writer, ",\"sleep_mode\":");
+    buddy_writer_u64(&writer, status->sleep_mode);
     buddy_writer_literal(&writer, "},\"sound\":{\"mode\":");
     buddy_writer_u64(&writer, status->sound_mode);
     buddy_writer_literal(&writer, ",\"stage\":");

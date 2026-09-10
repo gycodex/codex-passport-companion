@@ -138,6 +138,7 @@ bool buddy_orchestrator_execute_action(buddy_state_t *state,
         }
         return true;
     case BUDDY_ACTION_SETTINGS:
+        if (ops->persist_sleep != NULL && ops->persist_sleep(ops->context, action->settings.sleep_mode) != ESP_OK) return false;
         if (ops->persist_sound != NULL && ops->persist_sound(ops->context, action->settings.sound_mode) != ESP_OK) return false;
         return ops->persist_level != NULL &&
                ops->persist_level(ops->context,

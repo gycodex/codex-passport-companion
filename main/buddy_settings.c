@@ -18,6 +18,7 @@
 #define BUDDY_SETTINGS_DIRTY_DENY (1U << 4)
 #define BUDDY_SETTINGS_DIRTY_LEVEL (1U << 5)
 #define BUDDY_SETTINGS_DIRTY_SOUND (1U << 6)
+#define BUDDY_SETTINGS_DIRTY_SLEEP (1U << 7)
 
 typedef struct {
     esp_err_t (*get_str)(void *context, const char *key, char *value, size_t *length);
@@ -112,6 +113,7 @@ static void buddy_settings_snapshot_defaults(buddy_settings_snapshot_t *settings
     memset(settings, 0, sizeof(*settings));
     settings->ble_enabled = true;
     settings->sound_mode = BUDDY_SOUND_AUTO;
+    settings->sleep_mode = BUDDY_SLEEP_5_MIN;
 }
 
 static void buddy_settings_defaults(void)
@@ -219,6 +221,10 @@ static esp_err_t buddy_settings_stage(const buddy_settings_snapshot_t *settings,
     }
     if ((dirty & BUDDY_SETTINGS_DIRTY_OWNER) != 0U) {
         err = s_backend->set_str(s_backend_context, "owner", settings->owner);
+        if (err != ESP_OK) return err;
+    }
+    if ((dirty & BUDDY_SETTINGS_DIRTY_SLEEP) != 0U) {
+        err = s_backend->set_u8(s_backend_context, "sleep", settings->sleep_mode);
         if (err != ESP_OK) return err;
     }
     if ((dirty & BUDDY_SETTINGS_DIRTY_SOUND) != 0U) {
@@ -357,6 +363,9 @@ esp_err_t buddy_settings_load(buddy_settings_snapshot_t *snapshot)
         } else if (err != ESP_ERR_NVS_NOT_FOUND) {
             return err;
         }
+        err = s_backend->get_u8(s_backend_context, "sleep", &ble);
+        if (err == ESP_OK && ble < BUDDY_SLEEP_COUNT) loaded.sleep_mode = ble;
+        else if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) return err;
         err = s_backend->get_u8(s_backend_context, "sound", &ble);
         if (err == ESP_OK && ble < BUDDY_SOUND_COUNT) loaded.sound_mode = ble;
         else if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) return err;
@@ -439,6 +448,16 @@ esp_err_t buddy_settings_set_sound_mode(uint8_t mode)
     if (s_settings.sound_mode == mode) return ESP_OK;
     s_settings.sound_mode = mode;
     s_dirty |= BUDDY_SETTINGS_DIRTY_SOUND;
+    return buddy_settings_flush(true);
+}
+
+esp_err_t buddy_settings_set_sleep_mode(uint8_t mode)
+{
+    if (mode >= BUDDY_SLEEP_COUNT) return ESP_ERR_INVALID_ARG;
+    if (!s_initialized || buddy_settings_ensure_loaded() != ESP_OK) return ESP_ERR_INVALID_STATE;
+    if (s_settings.sleep_mode == mode) return ESP_OK;
+    s_settings.sleep_mode = mode;
+    s_dirty |= BUDDY_SETTINGS_DIRTY_SLEEP;
     return buddy_settings_flush(true);
 }
 

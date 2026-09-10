@@ -772,6 +772,8 @@ static esp_err_t buddy_orchestrator_status(void *context, const buddy_state_t *s
     report->sound_stage = buddy_sound_stage();
     report->sound_play_count = buddy_sound_play_count();
     report->sound_mode = settings.sound_mode;
+    report->sleep_mode = settings.sleep_mode;
+    report->screen_off = state->screen_off;
     return ESP_OK;
 }
 
@@ -816,6 +818,12 @@ static esp_err_t buddy_orchestrator_persist_sound(void *context, uint8_t mode)
     return buddy_settings_set_sound_mode(mode);
 }
 
+static esp_err_t buddy_orchestrator_persist_sleep(void *context, uint8_t mode)
+{
+    (void)context;
+    return buddy_settings_set_sleep_mode(mode);
+}
+
 static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
 {
     const buddy_orchestrator_ops_t ops = {
@@ -831,6 +839,7 @@ static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
         .set_ble_enabled = buddy_orchestrator_set_ble,
         .persist_level = buddy_orchestrator_persist_level,
         .persist_sound = buddy_orchestrator_persist_sound,
+        .persist_sleep = buddy_orchestrator_persist_sleep,
     };
     return ops;
 }
@@ -838,6 +847,11 @@ static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
 static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *action,
                                  buddy_event_t *result_event)
 {
+    static bool applied_screen_off;
+    if (applied_screen_off != state->screen_off) {
+        bsp_display_backlight(state->screen_off ? 0U : (20U + state->brightness_level * 20U));
+        applied_screen_off = state->screen_off;
+    }
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
     uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000ULL;
     if (action->play_completion_sound && buddy_alert_allowed(state->settings.sound_mode,
@@ -851,7 +865,6 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
         return false;
     }
     if (action->type == BUDDY_ACTION_SCREEN_OFF) {
-        bsp_display_backlight(0);
         memset(result_event, 0, sizeof(*result_event));
         return false;
     }

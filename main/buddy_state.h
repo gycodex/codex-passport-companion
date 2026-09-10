@@ -27,6 +27,7 @@ typedef struct {
     uint64_t time_received_ms;
     uint64_t highest_celebrated_level;
     uint64_t last_heartbeat_ms;
+    uint64_t last_activity_ms;
     uint64_t temporary_until_ms;
     uint32_t prompt_connection_generation;
     uint32_t confirmation_connection_generation;

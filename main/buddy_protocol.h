@@ -19,6 +19,8 @@ typedef struct {
     uint32_t sound_stage;
     uint32_t sound_play_count;
     uint8_t sound_mode;
+    uint8_t sleep_mode;
+    bool screen_off;
     uint64_t approval_count;
     uint64_t denial_count;
     uint64_t queue_overflow_count;

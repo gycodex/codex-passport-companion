@@ -63,6 +63,7 @@ typedef enum {
 typedef enum {
     BUDDY_SETTINGS_BRIGHTNESS,
     BUDDY_SETTINGS_SOUND,
+    BUDDY_SETTINGS_SLEEP,
     BUDDY_SETTINGS_BLE,
     BUDDY_SETTINGS_WIFI,
     BUDDY_SETTINGS_LED,
@@ -191,6 +192,11 @@ typedef struct {
 } buddy_command_t;
 
 typedef enum {
+    BUDDY_SLEEP_1_MIN, BUDDY_SLEEP_5_MIN, BUDDY_SLEEP_10_MIN,
+    BUDDY_SLEEP_NEVER, BUDDY_SLEEP_COUNT
+} buddy_sleep_mode_t;
+
+typedef enum {
     BUDDY_SOUND_OFF, BUDDY_SOUND_ON, BUDDY_SOUND_AUTO, BUDDY_SOUND_COUNT
 } buddy_sound_mode_t;
 
@@ -198,6 +204,7 @@ typedef struct {
     char name[BUDDY_NAME_MAX];
     char owner[BUDDY_OWNER_MAX];
     uint8_t sound_mode;
+    uint8_t sleep_mode;
     uint64_t approval_count;
     uint64_t denial_count;
     uint64_t highest_celebrated_level;
@@ -290,6 +297,7 @@ typedef struct {
     bool screen_off;
     uint8_t brightness_level;
     uint8_t sound_mode;
+    uint8_t sleep_mode;
     uint8_t species;
     bool approval_locked;
     buddy_permission_delivery_t permission_delivery;

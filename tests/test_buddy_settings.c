@@ -10,6 +10,8 @@ typedef struct {
     uint8_t ble;
     uint8_t sound;
     bool has_sound;
+    uint8_t sleep;
+    bool has_sleep;
     uint64_t approvals;
     uint64_t denials;
     uint64_t level;
@@ -82,6 +84,11 @@ static esp_err_t fake_get_u8(void *context, const char *key, uint8_t *value)
         return storage->get_u8_error;
     }
 
+    if (strcmp(key, "sleep") == 0) {
+        if (!storage->has_sleep) return ESP_ERR_NVS_NOT_FOUND;
+        *value = storage->sleep;
+        return ESP_OK;
+    }
     if (strcmp(key, "sound") == 0) {
         if (!storage->has_sound) return ESP_ERR_NVS_NOT_FOUND;
         *value = storage->sound;
@@ -98,6 +105,11 @@ static esp_err_t fake_set_u8(void *context, const char *key, uint8_t value)
 {
     fake_storage_t *storage = context;
 
+    if (strcmp(key, "sleep") == 0) {
+        storage->sleep = value;
+        storage->has_sleep = true;
+        return ESP_OK;
+    }
     if (strcmp(key, "sound") == 0) {
         storage->sound = value; storage->has_sound = true; return ESP_OK;
     }
@@ -411,8 +423,30 @@ static void test_sound_mode_survives_reload(void)
     assert(buddy_settings_set_sound_mode(BUDDY_SOUND_COUNT) == ESP_ERR_INVALID_ARG);
 }
 
+static void test_sleep_mode_persistence(void)
+{
+    fake_storage_t storage;
+    buddy_settings_snapshot_t snapshot;
+    test_setup(&storage);
+    assert(buddy_settings_load(&snapshot) == ESP_OK);
+    assert(snapshot.sleep_mode == BUDDY_SLEEP_5_MIN);
+    assert(buddy_settings_set_sleep_mode(BUDDY_SLEEP_NEVER) == ESP_OK);
+    assert(storage.has_sleep && storage.sleep == BUDDY_SLEEP_NEVER);
+    buddy_settings_test_set_backend(&fake_backend, &storage);
+    assert(buddy_settings_init() == ESP_OK);
+    assert(buddy_settings_load(&snapshot) == ESP_OK);
+    assert(snapshot.sleep_mode == BUDDY_SLEEP_NEVER);
+    assert(buddy_settings_set_sleep_mode(BUDDY_SLEEP_COUNT) == ESP_ERR_INVALID_ARG);
+    storage.sleep = 255;
+    buddy_settings_test_set_backend(&fake_backend, &storage);
+    assert(buddy_settings_init() == ESP_OK);
+    assert(buddy_settings_load(&snapshot) == ESP_OK);
+    assert(snapshot.sleep_mode == BUDDY_SLEEP_5_MIN);
+}
+
 int main(void)
 {
+    test_sleep_mode_persistence();
     test_sound_mode_survives_reload();
     test_rapid_permissions_only_commit_on_forced_flush();
     test_regular_flush_is_limited_to_once_per_minute();

@@ -9,7 +9,9 @@ writes a final answer. The top-right status area also shows the battery level.
 
 Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
 
-Current firmware version: **0.1.0-soft-alert**.
+Current firmware version: **0.1.0-idle-sleep**.
+
+The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it awake. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
 
 The implementation starts from this repository's `demo/claude-buddy-port` reference and
 keeps its bounded state machine, pixel UI, encrypted Nordic UART BLE transport, bonding,
