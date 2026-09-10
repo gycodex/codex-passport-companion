@@ -11,6 +11,8 @@ Window labels follow the reported duration; absent windows are hidden instead of
 
 Current branch firmware version: **0.2.0-lan**.
 
+**Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. No firmware update is required for the panel. See [setup and validation notes](docs/CONSOLE.md).
+
 **LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 
 The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it awake. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.

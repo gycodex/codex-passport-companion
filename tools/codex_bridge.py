@@ -64,7 +64,11 @@ class CodexAppServer:
                 await asyncio.wait_for(self.process.wait(), timeout=2.0)
             except asyncio.TimeoutError:
                 self.process.terminate()
-                await self.process.wait()
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    self.process.kill()
+                    await self.process.wait()
         if self.reader_task is not None:
             await self.reader_task
 
@@ -472,13 +476,18 @@ async def open_transport(args):
             yield client
 
 
-async def bridge_loop(args: argparse.Namespace) -> None:
+async def bridge_loop(args: argparse.Namespace, control=None) -> None:
+    def report(kind, **data):
+        if control is not None:
+            control.report(kind, **data)
+
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     usage_cache_path = codex_home / USAGE_CACHE_FILE
     watcher = SessionWatcher(codex_home)
     app_server = CodexAppServer(args.codex)
-    await app_server.start()
     try:
+        report("starting")
+        await app_server.start()
         usage = load_cached_usage(usage_cache_path)
         running_count = 0
         try:
@@ -515,6 +524,7 @@ async def bridge_loop(args: argparse.Namespace) -> None:
             return
         while True:
             try:
+                report("connecting")
                 async with open_transport(args) as client:
                     print("Connected. Codex usage and completion alerts are live.", flush=True)
                     timezone_offset = int(
@@ -529,8 +539,15 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                     last_usage = 0.0
                     last_task_refresh = 0.0
                     previous_sequence = watcher.completion_sequence
+                    # Establish the session baseline before enabling test alerts.
+                    await send_payload(client, heartbeat_payload(usage, watcher, running_count))
+                    report("connected", usage=usage, running=running_count, synced_at=time.time())
                     while client.is_connected:
                         changed = watcher.poll()
+                        if control is not None and control.take_test():
+                            watcher.completion_sequence += 1
+                            watcher._save_sequence()
+                            changed = True
                         completed = watcher.completion_sequence > previous_sequence
                         previous_sequence = watcher.completion_sequence
                         now = time.monotonic()
@@ -545,6 +562,7 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                                     roll_expired_usage_windows(usage)
                                     save_cached_usage(usage_cache_path, usage)
                             except Exception as error:
+                                report("warning", message=f"Usage refresh failed: {type(error).__name__}; will retry")
                                 print(
                                     f"Codex usage refresh failed: {error}. Will retry…",
                                     file=sys.stderr,
@@ -561,6 +579,7 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                                 changed = changed or refreshed_count != running_count
                                 running_count = refreshed_count
                             except Exception as error:
+                                report("warning", message=f"Task refresh failed: {type(error).__name__}; will retry")
                                 print(
                                     f"Codex task-count refresh failed: {error}. Will retry…",
                                     file=sys.stderr,
@@ -573,8 +592,12 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                                 heartbeat_payload(usage, watcher, running_count, completed),
                             )
                             last_heartbeat = now
+                            report("synced", usage=usage, running=running_count, synced_at=time.time())
+                            if completed:
+                                report("completion", message="Completion sent; sound follows device volume and quiet hours")
                         await asyncio.sleep(1.0)
             except Exception as error:  # BLE backend errors vary by operating system.
+                report("retrying", message=f"{type(error).__name__}: {error}" or "连接中断")
                 print(f"Bridge disconnected: {error}. Retrying…", file=sys.stderr, flush=True)
                 await asyncio.sleep(3.0)
     finally:
