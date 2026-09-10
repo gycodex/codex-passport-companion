@@ -11,9 +11,9 @@
 <button id="voice-devices" type="button" class="secondary">刷新音频设备</button>
 <p class="hint">Windows：安装 <a href="https://vb-audio.com/Cable/" target="_blank" rel="noreferrer">VB-CABLE</a>，这里选 CABLE Input，讯飞的麦克风选 CABLE Output。Mac：使用 <a href="https://existential.audio/blackhole/" target="_blank" rel="noreferrer">BlackHole</a>，两边均选 BlackHole。</p>
 <label class="check"><input id="voice-hotkeys" type="checkbox" checked>设备录音时自动触发输入法快捷键</label>
-<label>开始快捷键<input id="voice-start-key" placeholder="例如 f6 或 ctrl+alt+space" value="f6"></label>
+<label>开始快捷键<input id="voice-start-key" placeholder="例如 f6、右Alt 或 ctrl+alt+space" value="f6"></label>
 <label>结束快捷键<input id="voice-stop-key" placeholder="例如 f6" value="f6"></label>
-<p class="hint">讯飞预设 F6 开始、F6 结束，可按实际设置修改。切换输入法后请重新填写快捷键。Mac 需允许后台 Python 辅助功能权限。</p>
-<p class="hint">保存并连接后，在设备菜单打开“语音输入”。先点击电脑上的目标输入框，再按设备确认键开始／结束。不会自动按回车；单次最长 2 分钟。</p>
+<p class="hint">讯飞预设 F6，豆包预设 Ctrl＋Shift＋F8（需先在豆包免按模式设置，开始和结束使用同一组合键）。也可手动填写“右Alt”或“alt_r”，请与输入法设置核对。Mac 需允许后台 Python 辅助功能权限。</p>
+<p class="hint">保存并连接后，先点击电脑上的目标输入框，在设备首页短按下键开始／结束录音。伙伴显示说话动画，底部显示分秒计时。不会自动按回车；单次最长 2 分钟。</p>
 </details><label class="check"><input id="autoconnect" type="checkbox"> 启动控制台时自动连接</label><div class="actions"><button id="connect" type="submit">保存并连接 ↗</button><button id="save" type="button" class="secondary">保存</button><button id="disconnect" type="button" class="secondary" hidden>断开连接</button></div></form><p id="notice" role="status">准备好了，随时可以连接。</p></section></div>
 <section class="journal card"><div class="card-head"><span>03 / 活动日志</span><span>仅保存在本机</span></div><ol id="logs"><li>暂无活动记录。</li></ol></section><footer><button id="exit-console" type="button" class="secondary">退出后台</button><span>关闭网页后，后台桥接仍会继续运行。</span><span>蓝牙 + 局域网 · 同一设备同时只连接一台电脑</span></footer></main><script src="/app.js"></script></body></html>

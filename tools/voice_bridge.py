@@ -9,17 +9,20 @@ from collections import deque
 from contextlib import asynccontextmanager, suppress
 import threading
 import time
+import sys
 
 
 def parse_shortcut(value):
     if not isinstance(value, str) or len(value) > 80:
         raise ValueError("语音快捷键格式无效")
     keys = value.lower().replace(" ", "").split("+") if value else []
-    modifiers = {"ctrl", "alt", "shift", "cmd"}
+    aliases = {"右alt": "alt_r", "rightalt": "alt_r", "ralt": "alt_r"}
+    keys = [aliases.get(key, key) for key in keys]
+    modifiers = {"ctrl", "alt", "shift", "cmd", "alt_r"}
     allowed = modifiers | {"space"} | {f"f{i}" for i in range(1, 13)} | set("abcdefghijklmnopqrstuvwxyz0123456789")
     if len(keys) > 5 or len(set(keys)) != len(keys) or any(k not in allowed for k in keys):
-        raise ValueError("语音快捷键格式无效；支持 F1–F12、空格和修饰键组合")
-    if keys and sum(k not in modifiers for k in keys) != 1:
+        raise ValueError("语音快捷键格式无效；支持右 Alt、F1–F12、空格和修饰键组合")
+    if keys and keys != ["alt_r"] and sum(k not in modifiers for k in keys) != 1:
         raise ValueError("快捷键需要一个主键")
     return keys
 
@@ -131,6 +134,17 @@ class AudioOutput:
             self.buffered = 0
 
 
+def windows_right_alt(pressed):
+    """Send the extended physical right-Alt scan code, checking OS acceptance."""
+    import ctypes
+    from pynput._util.win32 import INPUT, INPUT_union, KEYBDINPUT, SendInput
+    # KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY (+ KEYEVENTF_KEYUP).
+    event = INPUT(type=INPUT.KEYBOARD, value=INPUT_union(
+        ki=KEYBDINPUT(wVk=0, wScan=0x38, dwFlags=0x09 | (0 if pressed else 0x02))))
+    if SendInput(1, ctypes.byref(event), ctypes.sizeof(INPUT)) != 1:
+        raise ValueError("右 Alt 发送失败，请检查输入法与控制台是否以相同权限运行")
+
+
 class Shortcuts:
     def __init__(self, cfg):
         self.enabled = cfg["voice_hotkeys"] and cfg["voice_output"] != "meter"
@@ -143,6 +157,13 @@ class Shortcuts:
 
     def send(self, keys):
         if not self.enabled:
+            return
+        if sys.platform == "win32" and keys == ["alt_r"]:
+            try:
+                windows_right_alt(True)
+                time.sleep(.08)
+            finally:
+                windows_right_alt(False)
             return
         pressed = []
         try:
@@ -199,14 +220,14 @@ def decode_packet(packet):
     return pcm
 
 
-async def voice_loop(client, cfg, report):
+async def voice_loop(client, cfg, report, stop_requested=lambda: False):
     output = shortcuts = None
     started = False
     try:
         output = MeterOutput() if cfg["voice_output"] == "meter" else AudioOutput(cfg["voice_output"])
         shortcuts = Shortcuts(cfg)
         session, expected, last_report = 0, 0, 0
-        while client.is_connected:
+        while client.is_connected and not stop_requested():
             packet = await client.request(b'{"voice":"poll"}')
             pcm = decode_packet(packet)
             if packet["session"] != session and (packet["recording"] or pcm):
@@ -255,11 +276,17 @@ async def voice_loop(client, cfg, report):
 async def voice_session(client, control):
     task = None
     if control and getattr(control, "config", {}).get("voice_enabled") and hasattr(client, "request"):
-        task = asyncio.create_task(voice_loop(client, dict(control.config), control.report))
+        task = asyncio.create_task(voice_loop(client, dict(control.config), control.report,
+            lambda: getattr(control, "stop_requested", False)))
     try:
         yield
     finally:
         if task:
             task.cancel()
-            with suppress(asyncio.CancelledError):
+            try:
                 await task
+            except asyncio.CancelledError:
+                # Swallow the child's cancellation, never the caller's stop request.
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    raise

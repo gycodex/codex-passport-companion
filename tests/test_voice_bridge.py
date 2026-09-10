@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from voice_bridge import decode_packet, decode_adpcm, parse_shortcut, voice_loop
+from voice_bridge import decode_packet, decode_adpcm, parse_shortcut, voice_loop, voice_session
 
 
 def packet(**changes):
@@ -37,9 +37,41 @@ class AudioThreadTests(unittest.TestCase):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_right_alt_tap_releases_even_when_interrupted(self):
+        from voice_bridge import Shortcuts
+        keys = Shortcuts({'voice_hotkeys': False, 'voice_output': 'meter',
+                         'voice_start_key': 'alt_r', 'voice_stop_key': 'alt_r'})
+        keys.enabled = True
+        with patch('voice_bridge.sys.platform', 'win32'), \
+             patch('voice_bridge.windows_right_alt') as send, \
+             patch('voice_bridge.time.sleep', side_effect=RuntimeError('interrupted')):
+            with self.assertRaises(RuntimeError):
+                keys.send(['alt_r'])
+            self.assertEqual([call.args for call in send.call_args_list], [(True,), (False,)])
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows input ABI')
+    def test_right_alt_scan_code_and_rejected_input(self):
+        import ctypes
+        from pynput._util.win32 import INPUT
+        from voice_bridge import windows_right_alt
+        events = []
+        def accept(count, pointer, size):
+            event = ctypes.cast(pointer, ctypes.POINTER(INPUT)).contents
+            events.append((event.value.ki.wVk, event.value.ki.wScan, event.value.ki.dwFlags))
+            return 1
+        with patch('pynput._util.win32.SendInput', side_effect=accept):
+            windows_right_alt(True)
+            windows_right_alt(False)
+        self.assertEqual(events, [(0, 0x38, 9), (0, 0x38, 11)])
+        with patch('pynput._util.win32.SendInput', return_value=0):
+            with self.assertRaises(ValueError):
+                windows_right_alt(True)
+
     def test_shortcuts_exclude_send_and_arbitrary_commands(self):
         self.assertEqual(parse_shortcut('CTRL+Alt+Space'), ['ctrl', 'alt', 'space'])
         self.assertEqual(parse_shortcut('F6'), ['f6'])
+        for value in ('右Alt', 'Right Alt', 'alt_r', 'ralt'):
+            self.assertEqual(parse_shortcut(value), ['alt_r'])
         for invalid in ('enter', 'cmd+enter', 'ctrl+ctrl+a', 'f6+f7', 'ctrl', '__import__', 'alt+tab'):
             with self.assertRaises(ValueError):
                 parse_shortcut(invalid)
@@ -62,6 +94,29 @@ class ValidationTests(unittest.TestCase):
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_parent_cancel_during_cleanup_is_not_swallowed(self):
+        cleaning = asyncio.Event()
+        async def child(*args):
+            try:
+                await asyncio.sleep(60)
+            finally:
+                cleaning.set()
+                await asyncio.sleep(60)
+        class Control:
+            config = {'voice_enabled': True}
+            def report(self, *a, **kw): pass
+        class Client:
+            async def request(self, value): pass
+        async def parent():
+            async with voice_session(Client(), Control()):
+                await asyncio.sleep(.01)
+        with patch('voice_bridge.voice_loop', child):
+            task = asyncio.create_task(parent())
+            await asyncio.wait_for(cleaning.wait(), 1)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 1)
+
     async def test_short_session_drains_before_stop_and_never_retriggers(self):
         events = []
         class Output:

@@ -1199,26 +1199,45 @@ static void test_switching_computers_rebases_completion_counter(void)
     assert(action.play_completion_sound);
 }
 
-static void test_voice_menu_and_power(void)
+static void test_home_voice_gesture_and_power(void)
 {
     buddy_state_t state;
     buddy_action_t action;
     buddy_state_init(&state, NULL);
-    state.menu_open = true;
-    state.menu_selection = BUDDY_MENU_VOICE;
-    buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
+    state.lan_mode = true;
+    buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_DOWN};
+    state.screen_off = true;
     buddy_state_reduce(&state, &key, 1000, &action);
-    assert(state.page == BUDDY_PAGE_VOICE && !state.menu_open && !action.voice_toggle);
+    assert(!state.screen_off && !action.voice_toggle && state.page == BUDDY_PAGE_HOME);
     buddy_state_reduce(&state, &key, 2000, &action);
-    assert(action.voice_toggle);
+    assert(action.voice_toggle && state.page == BUDDY_PAGE_HOME);
     state.voice_recording = true;
     state.settings.sleep_mode = BUDDY_SLEEP_1_MIN;
     buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
     buddy_state_reduce(&state, &tick, 120000, &action);
     assert(!state.screen_off && !state.screen_dimmed);
-    key.key = BUDDY_KEY_UP;
     buddy_state_reduce(&state, &key, 121000, &action);
-    assert(state.page == BUDDY_PAGE_HOME && !action.voice_toggle);
+    assert(action.voice_toggle && state.page == BUDDY_PAGE_HOME);
+    state.voice_recording = false;
+    key.type = BUDDY_EVENT_KEY_LONG;
+    buddy_state_reduce(&state, &key, 122000, &action);
+    assert(!action.voice_toggle && state.page == BUDDY_PAGE_HOME);
+    key.type = BUDDY_EVENT_KEY_CLICK;
+    state.menu_open = true;
+    buddy_state_reduce(&state, &key, 123000, &action);
+    assert(!action.voice_toggle);
+    state.menu_open = false;
+    state.passkey_visible = true;
+    buddy_state_reduce(&state, &key, 124000, &action);
+    assert(!action.voice_toggle);
+    state.passkey_visible = false;
+    state.page = BUDDY_PAGE_PET;
+    buddy_state_reduce(&state, &key, 125000, &action);
+    assert(!action.voice_toggle);
+    state.page = BUDDY_PAGE_HOME;
+    state.lan_mode = false;
+    buddy_state_reduce(&state, &key, 126000, &action);
+    assert(!action.voice_toggle);
 }
 
 int main(void)
@@ -1229,7 +1248,7 @@ int main(void)
     test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();
     test_completion_sound_is_an_edge_not_a_replayed_snapshot();
-    test_voice_menu_and_power();
+    test_home_voice_gesture_and_power();
     test_offline_initialization();
     test_heartbeat_mapping();
     test_codex_completion_sequence_celebrates_once();

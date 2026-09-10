@@ -298,7 +298,7 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s,
 {
     const buddy_i4_clip_t clip = {.x = 16, .y = compact ? 204 : 180, .w = 208, .h = compact ? 66 : 78};
     buddy_sprite_bounds_t bounds;
-    uint8_t state = art_state(s->character);
+    uint8_t state = s->voice_recording ? BUDDY_SPRITE_TALK : art_state(s->character);
     int x = 88;
     const char *caption = "准备就绪";
     lv_color_t color = COL_DIM;
@@ -306,9 +306,24 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s,
     if (buddy_sprite_bounds(s->species, state, s_tick, &bounds)) {
         x = (UI_W - bounds.w) / 2 - bounds.x;
     }
-    rule(layer, 96, compact ? 270 : 255, 48, COL_LINE);
-    buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, compact ? 208 : 188);
-    if (!(s->ble_connected || s->lan_connected) || s->heartbeat_stale) {
+    rule(layer, 96, compact ? 264 : 255, 48, COL_LINE);
+    buddy_sprite_render(&s_surface, &clip, s->species, state,
+                        s->voice_recording && s->voice_peak < 500 ? 0 : s_tick,
+                        x, compact ? 198 : 188);
+    if (s->voice_recording) {
+        /* Audio-reactive bars flank every pet species without covering its face. */
+        unsigned level = s->voice_peak / 350U;
+        if (level > 28U) level = 28U;
+        for (unsigned i = 0; i < 4; ++i) {
+            unsigned height = 3U + level * (1U + (s_tick + i) % 4U) / 4U;
+            int center = compact ? 238 : 220;
+            for (unsigned side = 0; side < 2; ++side)
+                box(layer, (side ? 176 : 36) + (int)i * 7, center - (int)height / 2,
+                    4, (int)height, COL_GREEN, COL_GREEN, 0, 0);
+        }
+        caption = "语音输入中";
+        color = COL_GREEN;
+    } else if (!(s->ble_connected || s->lan_connected) || s->heartbeat_stale) {
         caption = "等待同步";
     } else if (!s->voice_recording && s->character == BUDDY_CHARACTER_CELEBRATE) {
         caption = "任务完成";
@@ -317,7 +332,7 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s,
         caption = "工作中…";
         color = COL_GREEN;
     }
-    text(layer, 18, compact ? 274 : 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
+    text(layer, 18, 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
 }
 
 static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
@@ -353,8 +368,17 @@ static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
         usage_reset_text(reset, sizeof(reset), window->resets_at, s);
         text(layer, 18, top + (compact ? 39 : 67), 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
     }
-    if (count > 0U) draw_home_companion(layer, s, compact);
-    text(layer, 8, 297, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
+    if (count > 0U || s->voice_recording) draw_home_companion(layer, s, compact);
+    if (s->voice_recording) {
+        snprintf(value, sizeof(value), "%02u:%02u / 02:00  下键结束",
+                 s->voice_seconds / 60U, s->voice_seconds % 60U);
+        text(layer, 8, 297, 224, COL_GREEN, value, false, LV_TEXT_ALIGN_CENTER);
+    } else if (s->lan_mode) {
+        text(layer, 8, 284, 224, COL_DIM, "上键换页  下键语音", false, LV_TEXT_ALIGN_CENTER);
+        text(layer, 8, 302, 224, COL_DIM, "长按确认菜单", false, LV_TEXT_ALIGN_CENTER);
+    } else {
+        text(layer, 8, 297, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
+    }
 }
 
 static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
@@ -369,7 +393,7 @@ static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     rule(layer, 14, 66, 212, COL_LINE);
     switch (p) {
     case 0: snprintf(body, sizeof(body), "你的桌面伙伴。\n\n显示用量余量和任务完成提醒。"); break;
-    case 1: snprintf(body, sizeof(body), "上键：切换界面\n下键：翻页或拒绝\n确认键：允许或更改\n长按确认键：打开菜单"); break;
+    case 1: snprintf(body, sizeof(body), "上键：切换界面\n下键：翻页或拒绝\n确认键：允许或更改\n首页下键：语音输入\n长按确认键：打开菜单"); break;
     case 2: {
         buddy_usage_window_t windows[2];
         size_t count = buddy_usage_windows(&s->codex_usage, windows);
@@ -486,9 +510,9 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
         panel(layer, 154, 158, s->approval_locked ? COL_DIM : COL_RED, "助手请求授权", body,
               s->approval_locked ? (s->permission_delivery == BUDDY_PERMISSION_DELIVERY_FAILED ? "发送失败" : "正在发送……") : BUDDY_ACTION_APPROVAL);
     } else if (overlay == BUDDY_OVERLAY_MENU) {
-        static const char *const menu[] = {"设置", "关闭屏幕", "帮助", "关于", "语音输入", "关闭菜单"};
+        static const char *const menu[] = {"设置", "关闭屏幕", "帮助", "关于", "关闭菜单"};
         unsigned i;
-        box(layer, 38, 48, 164, 224, lv_color_hex(0x151719), COL_INK, 2, 5);
+        box(layer, 38, 48, 164, 74 + BUDDY_MENU_COUNT * 25, lv_color_hex(0x151719), COL_INK, 2, 5);
         text(layer, 52, 61, 136, COL_ORANGE, "菜单", true, LV_TEXT_ALIGN_CENTER);
         rule(layer, 52, 88, 136, COL_LINE);
         for (i = 0; i < BUDDY_MENU_COUNT; ++i) {
@@ -507,23 +531,6 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     }
 }
 
-static void draw_voice(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
-{
-    char elapsed[32];
-    text(layer, 12, 45, 216, COL_ORANGE, "语音输入", true, LV_TEXT_ALIGN_CENTER);
-    text(layer, 12, 85, 216, s->voice_recording ? COL_RED : COL_GREEN,
-         s->voice_recording ? "正在录音" : (s->voice_ready ? "麦克风已就绪" : "请开启电脑语音桥接"), false, LV_TEXT_ALIGN_CENTER);
-    unsigned level = s->voice_peak / 160;
-    if (level > 196) level = 196;
-    box(layer, 20, 128, 200, 22, COL_BG, COL_DIM, 1, 2);
-    if (s->voice_recording && level) box(layer, 22, 130, level, 18, COL_GREEN, COL_GREEN, 0, 0);
-    snprintf(elapsed, sizeof(elapsed), "%02u:%02u / 02:00", s->voice_seconds / 60, s->voice_seconds % 60);
-    text(layer, 12, 170, 216, COL_INK, elapsed, true, LV_TEXT_ALIGN_CENTER);
-    text(layer, 12, 222, 216, COL_INK, s->voice_recording ? "确认键：结束录音" : "确认键：开始录音", false, LV_TEXT_ALIGN_CENTER);
-    text(layer, 12, 252, 216, COL_DIM, "仅支持局域网连接", false, LV_TEXT_ALIGN_CENTER);
-    text(layer, 12, 298, 216, COL_DIM, "上键：返回", false, LV_TEXT_ALIGN_CENTER);
-}
-
 static void redraw(void)
 {
     lv_layer_t *layer = NULL;
@@ -533,7 +540,6 @@ static void redraw(void)
     switch (s_snapshot.page) {
     case BUDDY_PAGE_PET: draw_companion(layer, &s_snapshot); break;
     case BUDDY_PAGE_INFO: draw_info(layer, &s_snapshot); break;
-    case BUDDY_PAGE_VOICE: draw_voice(layer, &s_snapshot); break;
     case BUDDY_PAGE_SETTINGS: draw_settings(layer, &s_snapshot); break;
     default: draw_home(layer, &s_snapshot); break;
     }

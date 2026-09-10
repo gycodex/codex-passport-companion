@@ -878,7 +878,7 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
     static int applied_brightness = -1;
     static bool voice_wifi_awake;
     static wifi_ps_type_t previous_wifi_ps;
-    if (state->page != BUDDY_PAGE_VOICE || state->menu_open || state->prompt.id[0] ||
+    if (state->page != BUDDY_PAGE_HOME || state->menu_open || state->prompt.id[0] ||
         state->confirmation_pending || state->passkey_visible || !buddy_lan_connected()) buddy_voice_stop();
     else if (action->voice_toggle && buddy_voice_toggle()) {
         if (!voice_wifi_awake && esp_wifi_get_ps(&previous_wifi_ps) == ESP_OK) {

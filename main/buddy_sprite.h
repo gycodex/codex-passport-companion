@@ -6,7 +6,8 @@
 #include "buddy_i4.h"
 
 #define BUDDY_SPRITE_SPECIES_COUNT 18
-#define BUDDY_SPRITE_STATE_COUNT 7
+#define BUDDY_SPRITE_TALK 7
+#define BUDDY_SPRITE_STATE_COUNT 8
 
 typedef struct {
     int16_t x;

@@ -292,17 +292,13 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
             } else if (state->menu_selection == BUDDY_MENU_ABOUT) {
                 state->page = BUDDY_PAGE_INFO;
                 state->info_page = 5;
-            } else if (state->menu_selection == BUDDY_MENU_VOICE) {
-                state->page = BUDDY_PAGE_VOICE;
             }
             state->menu_open = false;
         }
         buddy_set_ui_refresh(action);
         return;
     }
-    if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_VOICE) {
-        if (action != NULL) action->voice_toggle = true;
-    } else if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_INFO && state->info_page == 4) {
+    if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_INFO && state->info_page == 4) {
         if (action != NULL) action->type = BUDDY_ACTION_LAN_SETUP;
     } else if (state->page == BUDDY_PAGE_SETTINGS) {
         buddy_settings_click(state, key, action);
@@ -319,7 +315,10 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
         state->info_page = (uint8_t)((state->info_page + 1U) % 6U);
         buddy_set_ui_refresh(action);
     } else if (key == BUDDY_KEY_DOWN && state->page == BUDDY_PAGE_HOME) {
-        if (action != NULL) {
+        if (state->lan_mode && !state->passkey_visible) {
+            if (action != NULL) action->voice_toggle = true;
+            buddy_set_ui_refresh(action);
+        } else if (action != NULL) {
             action->type = BUDDY_ACTION_UI_SCROLL;
             action->scroll_delta = -24;
         }

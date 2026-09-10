@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import asyncio
 import json
 import os
@@ -61,20 +61,29 @@ class CodexAppServer:
         await self.notify("initialized")
 
     async def close(self) -> None:
-        if self.process is not None:
-            if self.process.stdin is not None:
-                self.process.stdin.close()
-            try:
-                await asyncio.wait_for(self.process.wait(), timeout=2.0)
-            except asyncio.TimeoutError:
-                self.process.terminate()
+        try:
+            if self.process is not None:
+                if self.process.stdin is not None:
+                    self.process.stdin.close()
+                # This is the bridge-owned helper, not the user's Codex app.
+                # Closing stdin alone need not make app-server exit.
+                if self.process.returncode is None:
+                    with suppress(ProcessLookupError):
+                        self.process.terminate()
                 try:
                     await asyncio.wait_for(self.process.wait(), timeout=2.0)
                 except asyncio.TimeoutError:
-                    self.process.kill()
-                    await self.process.wait()
-        if self.reader_task is not None:
-            await self.reader_task
+                    with suppress(ProcessLookupError):
+                        self.process.kill()
+                    await asyncio.wait_for(self.process.wait(), timeout=2.0)
+        finally:
+            if self.reader_task is not None:
+                self.reader_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self.reader_task
+            for future in self.pending.values():
+                if not future.done():
+                    future.cancel()
 
     async def request(self, method: str, params: Any = None) -> dict[str, Any]:
         request_id = self.next_id
@@ -526,7 +535,7 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
         if args.dry_run:
             print(heartbeat_payload(usage, watcher, running_count).decode().rstrip())
             return
-        while True:
+        while not (control is not None and getattr(control, "stop_requested", False)):
             try:
                 report("connecting")
                 async with open_transport(args) as client:
@@ -548,7 +557,7 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                     report("connected", usage=usage, running=running_count, synced_at=time.time())
                     from voice_bridge import voice_session
                     async with voice_session(client, control):
-                        while client.is_connected:
+                        while client.is_connected and not (control is not None and getattr(control, "stop_requested", False)):
                             changed = watcher.poll()
                             if control is not None and control.take_test():
                                 watcher.completion_sequence += 1
@@ -603,6 +612,8 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                                     report("completion", message="Completion sent; sound follows device volume and quiet hours")
                             await asyncio.sleep(1.0)
             except Exception as error:  # BLE backend errors vary by operating system.
+                if control is not None and getattr(control, "stop_requested", False):
+                    break
                 report("retrying", message=f"{type(error).__name__}: {error}" or "连接中断")
                 print(f"Bridge disconnected: {error}. Retrying…", file=sys.stderr, flush=True)
                 await asyncio.sleep(3.0)

@@ -109,6 +109,7 @@ class Controller:
         self.test_pending = False
         self.last_test = 0
         self.task = None
+        self.stop_requested = False
         self.loop = asyncio.new_event_loop()
         self.action_lock = asyncio.Lock()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
@@ -188,14 +189,23 @@ class Controller:
                 device=cfg["device"] or None,
                 codex=find_codex() if cfg["codex_auto"] or not cfg["codex"] else cfg["codex"], dry_run=False)
             self.test_pending = False
+            self.stop_requested = False
             self.report("starting")
             self.task = asyncio.create_task(self.run_bridge(args))
         elif name == "disconnect":
+            self.stop_requested = True
             self.report("stopping")
             if self.task and not self.task.done():
                 self.task.cancel()
+                done, _ = await asyncio.wait({self.task}, timeout=10)
+                if not done:
+                    self.task.cancel()
+                    done, _ = await asyncio.wait({self.task}, timeout=3)
+                if not done:
+                    self.report("error", message="Disconnect timed out")
+                    raise ValueError("断开超时，请退出后台后重新启动")
                 try:
-                    await self.task
+                    self.task.result()
                 except asyncio.CancelledError:
                     pass
             self.test_pending = False

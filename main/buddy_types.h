@@ -42,7 +42,6 @@ typedef enum {
     BUDDY_PAGE_INFO,
     BUDDY_PAGE_TRANSCRIPT,
     BUDDY_PAGE_SETTINGS,
-    BUDDY_PAGE_VOICE,
 } buddy_page_t;
 
 typedef enum {
@@ -50,7 +49,6 @@ typedef enum {
     BUDDY_MENU_TURN_OFF,
     BUDDY_MENU_HELP,
     BUDDY_MENU_ABOUT,
-    BUDDY_MENU_VOICE,
     BUDDY_MENU_CLOSE,
     BUDDY_MENU_COUNT,
 } buddy_menu_item_t;
