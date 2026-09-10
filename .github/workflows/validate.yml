@@ -1,0 +1,33 @@
+name: Validate
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r tools/requirements-console.txt
+      - run: python -m unittest discover -s tests -p "test_*.py"
+  firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host C tests and fresh ESP32-C3 build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          cmake -S tests -B build-host-ci -DCMAKE_C_COMPILER=/usr/bin/gcc
+          cmake --build build-host-ci
+          ctest --test-dir build-host-ci --output-on-failure
+          idf.py -B build-firmware-ci build
+          idf.py -B build-firmware-ci size
