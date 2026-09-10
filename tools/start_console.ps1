@@ -42,7 +42,7 @@ try {
         & $selected -m venv $venvPath
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the Python environment.' }
     }
-    & $consolePython -c 'import importlib.util,sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in sys.argv[1:]) else 1)' bleak cryptography
+    & $consolePython -c 'import importlib.util,sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in sys.argv[1:]) else 1)' bleak cryptography psutil
     if ($LASTEXITCODE -ne 0) {
         & $consolePython -m pip install -r (Join-Path $PSScriptRoot 'requirements-console.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed. Check the network and retry; details are shown above.' }

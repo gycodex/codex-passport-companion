@@ -22,14 +22,66 @@ from codex_bridge import bridge_loop, NUS_SERVICE_UUID
 ASSETS = Path(__file__).with_name("console")
 
 
+def running_codex_paths():
+    """Inspect only this user's Codex processes; never retain command arguments."""
+    try:
+        import psutil
+    except ImportError:
+        return []
+    candidates = []
+    try:
+        owner = psutil.Process().username()
+        deadline = time.monotonic() + 3
+        for process in psutil.process_iter(["name"]):
+            if time.monotonic() >= deadline:
+                break
+            try:
+                if (process.info.get("name") or "").lower() not in ("codex", "codex.exe"):
+                    continue
+                if process.username() != owner:
+                    continue
+                executable = process.exe()
+                arguments = process.cmdline()
+                normalized = executable.replace("\\", "/").lower()
+                server = "app-server" in arguments[1:]
+                # Desktop GUI can also be named Codex.exe. Require CLI evidence.
+                vendor_cli = "/vendor/" in normalized and "/codex/" in normalized
+                if server or vendor_cli:
+                    candidates.append((0 if server else 1, executable))
+            except (psutil.Error, OSError):
+                continue
+    except (psutil.Error, OSError):
+        return []
+    return [path for _, path in sorted(set(candidates))]
+
+
 def find_codex():
+    for executable in running_codex_paths():
+        if Path(executable).is_file() and os.access(executable, os.X_OK):
+            return executable
     found = shutil.which("codex")
+    candidates = []
     if sys.platform == "win32":
         npm = Path(os.environ.get("APPDATA", "")) / "npm"
-        candidates = list(npm.glob("node_modules/@openai/codex/node_modules/@openai/codex-win32-*/vendor/*/codex/codex.exe"))
-        if candidates:
-            return str(candidates[0])
-    return found or "codex"
+        roots = [npm]
+        if found:
+            roots.insert(0, Path(found).parent)
+        for root in roots:
+            candidates.extend(root.glob("node_modules/@openai/codex/node_modules/@openai/codex-win32-*/vendor/*/codex/codex.exe"))
+            candidates.extend(root.glob("node_modules/@openai/codex/vendor/*/codex/codex.exe"))
+        if found and Path(found).suffix.lower() == ".exe":
+            candidates.insert(0, Path(found))
+    else:
+        if found:
+            candidates.append(Path(found))
+        # Finder launches do not necessarily inherit the user's terminal PATH.
+        candidates.extend(Path(p) for p in ("/opt/homebrew/bin/codex", "/usr/local/bin/codex"))
+        candidates.extend([Path.home()/".local/bin/codex", Path.home()/".npm-global/bin/codex"])
+        candidates.extend(sorted((Path.home()/".nvm/versions/node").glob("*/bin/codex"), reverse=True))
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return "codex"
 
 
 def atomic_json(path, value):
@@ -44,7 +96,7 @@ class Controller:
     def __init__(self, directory):
         self.directory = directory
         self.lock = threading.RLock()
-        self.config = dict(mode="lan", host="", port=8765, device="", codex=find_codex(), autoconnect=False)
+        self.config = dict(mode="lan", host="", port=8765, device="", codex="", codex_auto=True, autoconnect=False)
         try:
             saved = json.loads((directory / "settings.json").read_text(encoding="utf-8"))
             self.config.update({k: saved[k] for k in self.config if k in saved})
@@ -108,8 +160,8 @@ class Controller:
                 raise ValueError("Invalid port")
             if type(cfg["autoconnect"]) is not bool:
                 raise ValueError("Invalid autoconnect setting")
-            if not cfg["codex"]:
-                cfg["codex"] = find_codex()
+            if type(cfg["codex_auto"]) is not bool:
+                raise ValueError("Invalid setting")
             pairing = data.get("pairing")
             if pairing is not None:
                 if not isinstance(pairing, dict) or not isinstance(pairing.get("key"), str):
@@ -129,7 +181,8 @@ class Controller:
                 raise ValueError("Enter device IP and import pairing file first")
             args = argparse.Namespace(lan=cfg["host"] if cfg["mode"] == "lan" else None,
                 lan_port=cfg["port"], lan_key_file=str(self.directory / "pairing.json"),
-                device=cfg["device"] or None, codex=cfg["codex"], dry_run=False)
+                device=cfg["device"] or None,
+                codex=find_codex() if cfg["codex_auto"] or not cfg["codex"] else cfg["codex"], dry_run=False)
             self.test_pending = False
             self.report("starting")
             self.task = asyncio.create_task(self.run_bridge(args))

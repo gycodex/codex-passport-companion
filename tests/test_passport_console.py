@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
-from passport_console import Controller, Server
+from passport_console import Controller, Server, find_codex, running_codex_paths
 
 
 class ConsoleTests(unittest.TestCase):
@@ -51,6 +51,41 @@ class ConsoleTests(unittest.TestCase):
         self.assertTrue(snapshot["key_present"])
         self.assertNotIn(key, json.dumps(snapshot))
         self.assertEqual(json.loads((Path(self.temp.name) / "pairing.json").read_text())["key"], key)
+
+    def test_windows_npm_launcher_resolves_to_native_executable(self):
+        root = Path(self.temp.name)
+        native = root / "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex.exe"
+        native.parent.mkdir(parents=True)
+        native.touch()
+        with patch("passport_console.running_codex_paths", return_value=[]), patch("passport_console.sys.platform", "win32"), patch("passport_console.shutil.which", return_value=str(root / "npm/codex.cmd")), patch.dict("os.environ", {"APPDATA": str(root)}):
+            self.assertEqual(find_codex(), str(native))
+
+    def test_running_codex_takes_priority_over_path(self):
+        native = Path(self.temp.name) / "codex.exe"
+        native.touch()
+        with patch("passport_console.running_codex_paths", return_value=[str(native)]), patch("passport_console.shutil.which") as lookup:
+            self.assertEqual(find_codex(), str(native))
+            lookup.assert_not_called()
+
+    def test_process_detection_ignores_gui_other_users_and_exited_processes(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        import psutil
+        def process(path, arguments, owner="me"):
+            p = Mock()
+            p.info = {"name": "codex.exe"}
+            p.username.return_value = owner
+            p.exe.return_value = path
+            p.cmdline.return_value = arguments
+            return p
+        gui = process("C:/Apps/Codex.exe", ["Codex.exe"])
+        other = process("C:/other/codex.exe", ["codex.exe", "app-server"], "other")
+        cli = process("C:/my/codex.exe", ["codex.exe", "app-server"])
+        exited = process("", [])
+        exited.exe.side_effect = psutil.NoSuchProcess(123)
+        with patch("psutil.Process") as current, patch("psutil.process_iter", return_value=[gui, other, exited, cli]):
+            current.return_value.username.return_value = "me"
+            self.assertEqual(running_codex_paths(), ["C:/my/codex.exe"])
 
     def test_invalid_inputs_do_not_save(self):
         for value in ({"port": 0}, {"pairing": {"key": "bad"}}, {"host": "8.8.8.8"}, {"autoconnect": "yes"}):

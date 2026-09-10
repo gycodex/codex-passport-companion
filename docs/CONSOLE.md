@@ -34,7 +34,7 @@ python tools/passport_console.py
 - `Connect when this console starts` 表示**启动控制台时自动连接**，不是系统开机自启。
 - `Test completion reminder` 在当前连接中发送完成事件，不另开连接。事件会推进本机完成序号，并遵循设备音量和夜间静音规则。
 - 左侧显示实际返回的额度窗口、任务数量和最近同步时间。未返回的窗口不显示。
-- `Advanced settings` 可指定 Codex CLI 可执行文件和 LAN 端口。macOS 如果从 Finder 启动找不到 CLI，可在终端用 `which codex` 获取完整路径后填写。
+- 默认优先从当前用户正在运行的 Codex CLI / app-server 进程取得可执行文件路径，无需填写。排除桌面界面进程和其他用户的进程；进程退出或不可读时自动跳过。找不到运行进程时，再查 Windows 常见 npm 安装位置及 macOS 的 PATH、Homebrew、nvm 等位置。进程参数仅用于辨别 CLI，不保存或输出到日志。特殊安装位置可在「高级设置」取消「自动查找 Codex」，再手动指定。
 
 ## 本机数据与验证范围
 
