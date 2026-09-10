@@ -87,11 +87,17 @@ python3 -m unittest tests/test_codex_bridge.py
 固件编译成功不等于真机验收。真机还需分别验证配对、两个用量窗口、重置倒计时、
 运行/就绪状态、完成庆祝提示、断线重连、电池显示和 BLE 长连接稳定性。
 
-## 归属
+## 致谢
 
-BLE 与 Buddy 应用基础来自本仓库的 `demo/claude-buddy-port` 分支；该分支记录了与
-Anthropic 公开 Hardware Buddy 协议的兼容关系。归属信息见 [NOTICE](NOTICE)。
-本 Codex 扩展与桥接器不是 OpenAI 官方硬件集成。
+本项目基于 [zt20/codex-usage-ai-passport](https://github.com/zt20/codex-usage-ai-passport) 二次开发。感谢原作者 **zt20** 开源 Codex 用量显示固件及桥接程序，为这个桌面伙伴提供了基础。
+
+同时感谢：
+
+- [FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)：提供 AI Passport 平台及开源固件基础。
+- [Shinku-Chen/ai-passport 的 feature/voice-keychain 分支](https://github.com/Shinku-Chen/ai-passport/tree/feature/voice-keychain)：在排查和调校任务完成提示音时，提供了音频实现参考。
+- [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)：提供公开的 Hardware Buddy BLE 协议参考。原有归属与许可声明保留在 [NOTICE](NOTICE) 中。
+
+本仓库在这些工作的基础上，增加了用量窗口自适应、首页像素宠物、任务轻提醒、自动息屏及蓝牙稳定性修复。本 Codex 扩展与桥接器不是 OpenAI 官方硬件集成。
 
 ## 本地增强：轻提醒
 

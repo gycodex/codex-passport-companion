@@ -94,12 +94,17 @@ Firmware build success is not hardware validation. On-device acceptance must sep
 verify pairing, both usage windows, reset countdowns, running/ready state, completion
 celebration, reconnect, battery display, and a sustained BLE connection.
 
-## Attribution
+## Acknowledgements
 
-The BLE and Buddy application foundation derives from this repository's
-`demo/claude-buddy-port` branch, which in turn documents compatibility with Anthropic's
-public Hardware Buddy protocol. See [NOTICE](NOTICE) for attribution. The Codex extension
-and bridge are not an official OpenAI hardware integration.
+This project builds on [zt20/codex-usage-ai-passport](https://github.com/zt20/codex-usage-ai-passport). Thank you to **zt20** for open-sourcing the Codex usage firmware and bridge that made this companion possible.
+
+Thanks also to:
+
+- [FoloToy/ai-passport](https://github.com/FoloToy/ai-passport) for the AI Passport platform and its open-source firmware foundation.
+- [Shinku-Chen/ai-passport — feature/voice-keychain](https://github.com/Shinku-Chen/ai-passport/tree/feature/voice-keychain) for the audio implementation used as a reference when investigating and tuning the completion chime.
+- [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy) for the public Hardware Buddy BLE protocol reference. See [NOTICE](NOTICE) for the existing attribution and license notice.
+
+This repository adds adaptive usage windows, a home-screen pixel pet, completion chimes, automatic display sleep and BLE stability fixes on top of that work. The Codex extension and bridge are not an official OpenAI hardware integration.
 
 ## Local enhancement: soft completion chime
 
