@@ -3,11 +3,13 @@
 [简体中文](README.zh_CN.md) · **English**
 
 This firmware turns FoloToy AI Passport into a private Codex desk companion. It shows the
-remaining share of the current 5-hour and 7-day Codex limits as progress bars, shows the
+remaining share of the Codex usage windows actually returned by the service as progress bars, shows the
 number of active tasks, and displays a six-second **Task complete** celebration when Codex
 writes a final answer. The top-right status area also shows the battery level.
 
-Current release: **0.1.0**.
+Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
+
+Current firmware version: **0.1.0-soft-alert**.
 
 The implementation starts from this repository's `demo/claude-buddy-port` reference and
 keeps its bounded state machine, pixel UI, encrypted Nordic UART BLE transport, bonding,
@@ -96,3 +98,7 @@ The BLE and Buddy application foundation derives from this repository's
 `demo/claude-buddy-port` branch, which in turn documents compatibility with Anthropic's
 public Hardware Buddy protocol. See [NOTICE](NOTICE) for attribution. The Codex extension
 and bridge are not an official OpenAI hardware integration.
+
+## Local enhancement: soft completion chime
+
+Settings > Sound cycles Off / On / Auto and persists the selection. Auto is the default: quiet from 22:00 to 08:00 in the computer-synchronized local time, and silent until time is known. New live completions play a short, low-volume two-note chime on a dedicated worker. Duplicate snapshots and reconnect catch-up do not replay sounds; bursts are coalesced.

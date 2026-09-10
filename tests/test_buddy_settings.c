@@ -8,6 +8,8 @@ typedef struct {
     char name[BUDDY_NAME_MAX];
     char owner[BUDDY_OWNER_MAX];
     uint8_t ble;
+    uint8_t sound;
+    bool has_sound;
     uint64_t approvals;
     uint64_t denials;
     uint64_t level;
@@ -80,6 +82,11 @@ static esp_err_t fake_get_u8(void *context, const char *key, uint8_t *value)
         return storage->get_u8_error;
     }
 
+    if (strcmp(key, "sound") == 0) {
+        if (!storage->has_sound) return ESP_ERR_NVS_NOT_FOUND;
+        *value = storage->sound;
+        return ESP_OK;
+    }
     if (strcmp(key, "ble") != 0 || !storage->has_ble) {
         return ESP_ERR_NVS_NOT_FOUND;
     }
@@ -91,6 +98,9 @@ static esp_err_t fake_set_u8(void *context, const char *key, uint8_t value)
 {
     fake_storage_t *storage = context;
 
+    if (strcmp(key, "sound") == 0) {
+        storage->sound = value; storage->has_sound = true; return ESP_OK;
+    }
     if (strcmp(key, "ble") != 0) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -149,6 +159,7 @@ static esp_err_t fake_erase_all(void *context)
     storage->has_name = false;
     storage->has_owner = false;
     storage->has_ble = false;
+    storage->has_sound = false;
     storage->has_approvals = false;
     storage->has_denials = false;
     storage->has_level = false;
@@ -384,8 +395,25 @@ static void test_factory_reset_only_erases_buddy_backend(void)
     assert(snapshot.ble_enabled);
 }
 
+static void test_sound_mode_survives_reload(void)
+{
+    fake_storage_t storage;
+    buddy_settings_snapshot_t snapshot;
+    test_setup(&storage);
+    assert(buddy_settings_load(&snapshot) == ESP_OK);
+    assert(snapshot.sound_mode == BUDDY_SOUND_AUTO);
+    assert(buddy_settings_set_sound_mode(BUDDY_SOUND_OFF) == ESP_OK);
+    assert(storage.has_sound && storage.sound == BUDDY_SOUND_OFF && storage.commit_count == 1);
+    buddy_settings_test_set_backend(&fake_backend, &storage);
+    assert(buddy_settings_init() == ESP_OK);
+    assert(buddy_settings_load(&snapshot) == ESP_OK);
+    assert(snapshot.sound_mode == BUDDY_SOUND_OFF);
+    assert(buddy_settings_set_sound_mode(BUDDY_SOUND_COUNT) == ESP_ERR_INVALID_ARG);
+}
+
 int main(void)
 {
+    test_sound_mode_survives_reload();
     test_rapid_permissions_only_commit_on_forced_flush();
     test_regular_flush_is_limited_to_once_per_minute();
     test_name_validation_and_defaults();

@@ -402,6 +402,7 @@ static void test_device_status_omits_unavailable_battery_fields(void)
                   "{\"ack\":\"status\",\"ok\":true,\"data\":{"
                   "\"name\":\"Buddy\",\"sec\":true,"
                   "\"sys\":{\"up\":123,\"heap\":32000},"
+                  "\"sound\":{\"mode\":0,\"stage\":0,\"played\":0},"
                   "\"stats\":{\"appr\":7,\"deny\":2,\"lvl\":0}}}\n") == 0);
     assert(strstr(json, "\"bat\"") == NULL);
 
@@ -434,6 +435,9 @@ static void test_task_tx_capacity_handles_worst_case_escaping(void)
     status.approval_count = UINT64_MAX;
     status.denial_count = UINT64_MAX;
     status.queue_overflow_count = UINT64_MAX;
+    status.sound_stage = UINT32_MAX;
+    status.sound_play_count = UINT32_MAX;
+    status.sound_mode = UINT8_MAX;
 
     assert(buddy_protocol_permission_json(json, sizeof(json), id, BUDDY_PERMISSION_ONCE) > 0);
     assert(buddy_protocol_device_status_json(json, sizeof(json), &status) > 0);

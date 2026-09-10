@@ -13,6 +13,15 @@ SPEC.loader.exec_module(codex_bridge)
 
 
 class CodexBridgeTests(unittest.TestCase):
+    def test_weekly_only_window_is_not_relabelled_as_five_hours(self) -> None:
+        result = codex_bridge.normalize_rate_limits({"rateLimits": {
+            "primary": {"usedPercent": 36, "windowDurationMins": 10080,
+                        "resetsAt": 1234}, "secondary": None}})
+        self.assertTrue(result["available"])
+        self.assertEqual(result["primary"],
+                         {"used": 36, "duration": 10080, "reset": 1234})
+        self.assertEqual(result["secondary"]["duration"], 0)
+
     def test_normalizes_codex_bucket(self) -> None:
         result = codex_bridge.normalize_rate_limits(
             {

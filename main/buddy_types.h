@@ -190,9 +190,14 @@ typedef struct {
     bool value_truncated;
 } buddy_command_t;
 
+typedef enum {
+    BUDDY_SOUND_OFF, BUDDY_SOUND_ON, BUDDY_SOUND_AUTO, BUDDY_SOUND_COUNT
+} buddy_sound_mode_t;
+
 typedef struct {
     char name[BUDDY_NAME_MAX];
     char owner[BUDDY_OWNER_MAX];
+    uint8_t sound_mode;
     uint64_t approval_count;
     uint64_t denial_count;
     uint64_t highest_celebrated_level;
@@ -247,6 +252,7 @@ typedef struct {
     uint32_t connection_generation;
     bool ble_enabled;
     bool confirmation_acknowledge;
+    bool play_completion_sound;
 } buddy_action_t;
 
 typedef struct {
@@ -283,6 +289,7 @@ typedef struct {
     bool transcript_enabled;
     bool screen_off;
     uint8_t brightness_level;
+    uint8_t sound_mode;
     uint8_t species;
     bool approval_locked;
     buddy_permission_delivery_t permission_delivery;

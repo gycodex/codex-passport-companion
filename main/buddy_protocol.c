@@ -716,6 +716,12 @@ int buddy_protocol_device_status_json(char *json, size_t size,
     buddy_writer_u64(&writer, status->uptime_ms / 1000U);
     buddy_writer_literal(&writer, ",\"heap\":");
     buddy_writer_u64(&writer, status->free_heap);
+    buddy_writer_literal(&writer, "},\"sound\":{\"mode\":");
+    buddy_writer_u64(&writer, status->sound_mode);
+    buddy_writer_literal(&writer, ",\"stage\":");
+    buddy_writer_u64(&writer, status->sound_stage);
+    buddy_writer_literal(&writer, ",\"played\":");
+    buddy_writer_u64(&writer, status->sound_play_count);
     buddy_writer_literal(&writer, "},\"stats\":{\"appr\":");
     buddy_writer_u64(&writer, status->approval_count);
     buddy_writer_literal(&writer, ",\"deny\":");

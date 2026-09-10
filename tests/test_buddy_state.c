@@ -968,8 +968,38 @@ static void test_new_link_generation_invalidates_sensitive_state_when_disconnect
     assert(!state.confirmation_pending);
 }
 
+static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_settings_snapshot_t settings = {.sound_mode = BUDDY_SOUND_AUTO};
+    buddy_event_t event = {.type = BUDDY_EVENT_HEARTBEAT};
+    event.heartbeat.connected = true;
+    event.heartbeat.codex_usage.present = true;
+    event.heartbeat.codex_usage.completion_sequence = 10;
+    buddy_state_init(&state, &settings);
+    buddy_state_reduce(&state, &event, 100, &action);
+    assert(!action.play_completion_sound);
+    event.heartbeat.codex_usage.completion_sequence++;
+    buddy_state_reduce(&state, &event, 200, &action);
+    assert(action.play_completion_sound);
+    buddy_state_reduce(&state, &event, 300, &action);
+    assert(!action.play_completion_sound);
+    buddy_event_t disconnected = {.type = BUDDY_EVENT_BLE_DISCONNECTED};
+    buddy_state_reduce(&state, &disconnected, 400, &action);
+    event.heartbeat.codex_usage.completion_sequence++;
+    buddy_state_reduce(&state, &event, 500, &action);
+    assert(!action.play_completion_sound);
+    state.page = BUDDY_PAGE_SETTINGS;
+    state.settings_selection = BUDDY_SETTINGS_SOUND;
+    buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
+    buddy_state_reduce(&state, &key, 600, &action);
+    assert(action.type == BUDDY_ACTION_SETTINGS && action.settings.sound_mode == BUDDY_SOUND_OFF);
+}
+
 int main(void)
 {
+    test_completion_sound_is_an_edge_not_a_replayed_snapshot();
     test_offline_initialization();
     test_heartbeat_mapping();
     test_codex_completion_sequence_celebrates_once();

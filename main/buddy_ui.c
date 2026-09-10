@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "buddy_i4.h"
+#include "buddy_usage.h"
 #include "buddy_font_zh.h"
 #include "buddy_sprite.h"
 #include "buddy_text_layout.h"
@@ -293,48 +294,65 @@ static void usage_reset_text(char *destination, size_t size, uint64_t resets_at,
     }
 }
 
+static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
+{
+    const buddy_i4_clip_t clip = {.x = 16, .y = 180, .w = 208, .h = 78};
+    buddy_sprite_bounds_t bounds;
+    uint8_t state = art_state(s->character);
+    int x = 88;
+    const char *caption = "Ready";
+    lv_color_t color = COL_DIM;
+
+    if (buddy_sprite_bounds(s->species, state, s_tick, &bounds)) {
+        x = (UI_W - bounds.w) / 2 - bounds.x;
+    }
+    rule(layer, 96, 255, 48, COL_LINE);
+    buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, 188);
+    if (!s->ble_connected || s->heartbeat_stale) {
+        caption = "Waiting for sync";
+    } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
+        caption = "Task complete";
+        color = COL_GREEN;
+    } else if (s->running > 0U) {
+        caption = "Working...";
+        color = COL_GREEN;
+    }
+    text(layer, 18, 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
+}
+
 static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
 {
     char value[64];
     char reset[32];
-    unsigned i;
-    const buddy_codex_usage_t *u = &s->codex_usage;
+    buddy_usage_window_t windows[2];
+    size_t count = buddy_usage_windows(&s->codex_usage, windows);
     text(layer, 8, 44, 224, COL_ORANGE, "Codex 使用量", true, LV_TEXT_ALIGN_CENTER);
     snprintf(value, sizeof(value), "进行中：%u 个任务", s->running);
     text(layer, 8, 64, 224, s->running > 0 ? COL_GREEN : COL_DIM,
          value, false, LV_TEXT_ALIGN_CENTER);
-    if (!u->available) {
+    if (count == 0U) {
         wrapped_text(layer, 22, 113, 196, COL_INK,
-                     "暂未获取使用量。\n请保持电脑端桥接程序运行。", 5);
-    } else {
-        unsigned primary_remaining = 100U - u->primary_used_percent;
-        unsigned secondary_remaining = 100U - u->secondary_used_percent;
-        box(layer, 8, 80, 224, 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
-        text(layer, 18, 93, 100, COL_INK, "5 小时窗口", false, LV_TEXT_ALIGN_LEFT);
-        snprintf(value, sizeof(value), "剩余 %u%%", primary_remaining);
-        text(layer, 116, 93, 106, primary_remaining < 20U ? COL_RED : COL_GREEN,
-             value, false, LV_TEXT_ALIGN_RIGHT);
-        for (i = 0; i < 10; ++i) {
-            bool on = i * 10U < primary_remaining;
-            box(layer, 18 + (int)i * 20, 122, 16, 13, on ? COL_GREEN : COL_LINE,
-                on ? COL_GREEN : COL_LINE, 0, 1);
-        }
-        usage_reset_text(reset, sizeof(reset), u->primary_resets_at, s);
-        text(layer, 18, 147, 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
-
-        box(layer, 8, 178, 224, 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
-        text(layer, 18, 191, 100, COL_INK, "7 天窗口", false, LV_TEXT_ALIGN_LEFT);
-        snprintf(value, sizeof(value), "剩余 %u%%", secondary_remaining);
-        text(layer, 116, 191, 106, secondary_remaining < 20U ? COL_RED : COL_YELLOW,
-             value, false, LV_TEXT_ALIGN_RIGHT);
-        for (i = 0; i < 10; ++i) {
-            bool on = i * 10U < secondary_remaining;
-            box(layer, 18 + (int)i * 20, 220, 16, 13, on ? COL_YELLOW : COL_LINE,
-                on ? COL_YELLOW : COL_LINE, 0, 1);
-        }
-        usage_reset_text(reset, sizeof(reset), u->secondary_resets_at, s);
-        text(layer, 18, 245, 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
+                     "Usage unavailable.\nKeep the bridge running.", 5);
     }
+    for (size_t index = 0; index < count; ++index) {
+        const buddy_usage_window_t *window = &windows[index];
+        int top = 80 + (int)index * 98;
+        lv_color_t color = index == 0U ? COL_GREEN : COL_YELLOW;
+        box(layer, 8, top, 224, 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
+        text(layer, 18, top + 13, 100, COL_INK, window->label,
+             false, LV_TEXT_ALIGN_LEFT);
+        snprintf(value, sizeof(value), "剩余 %u%%", window->remaining);
+        text(layer, 116, top + 13, 106, window->remaining < 20U ? COL_RED : color,
+             value, false, LV_TEXT_ALIGN_RIGHT);
+        for (unsigned i = 0; i < 10U; ++i) {
+            bool on = i * 10U < window->remaining;
+            box(layer, 18 + (int)i * 20, top + 42, 16, 13, on ? color : COL_LINE,
+                on ? color : COL_LINE, 0, 1);
+        }
+        usage_reset_text(reset, sizeof(reset), window->resets_at, s);
+        text(layer, 18, top + 67, 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
+    }
+    if (count == 1U) draw_home_companion(layer, s);
     text(layer, 8, 297, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
 }
 
@@ -349,21 +367,24 @@ static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     text(layer, 174, 43, 52, COL_DIM, page, false, LV_TEXT_ALIGN_RIGHT);
     rule(layer, 14, 66, 212, COL_LINE);
     switch (p) {
-    case 0: snprintf(body, sizeof(body), "你的桌面助手。\n\n显示 5 小时与 7 天使用量，\n并在任务完成时提醒你。"); break;
+    case 0: snprintf(body, sizeof(body), "Your desk companion.\n\nShows available usage windows and task completion alerts."); break;
     case 1: snprintf(body, sizeof(body), "上键：切换界面\n下键：翻页或拒绝\n确认键：允许或更改\n长按确认键：打开菜单"); break;
-    case 2:
-        if (s->codex_usage.available) {
-            snprintf(body, sizeof(body),
-                     "任务数：%u\n运行中：%u\n\n5 小时剩余：%u%%\n7 天剩余：%u%%",
-                     s->total, s->running,
-                     100U - s->codex_usage.primary_used_percent,
-                     100U - s->codex_usage.secondary_used_percent);
-        } else {
-            snprintf(body, sizeof(body),
-                     "任务数：%u\n运行中：%u\n\n5 小时剩余：--\n7 天剩余：--",
-                     s->total, s->running);
+    case 2: {
+        buddy_usage_window_t windows[2];
+        size_t count = buddy_usage_windows(&s->codex_usage, windows);
+        size_t used = (size_t)snprintf(body, sizeof(body),
+            "Tasks: %u\nRunning: %u\n", s->total, s->running);
+        if (count == 0U) {
+            snprintf(body + used, sizeof(body) - used, "\nUsage unavailable.");
+        }
+        for (size_t i = 0; i < count && used < sizeof(body); ++i) {
+            int written = snprintf(body + used, sizeof(body) - used,
+                "\n%s left: %u%%", windows[i].label, windows[i].remaining);
+            if (written < 0) break;
+            used += (size_t)written;
         }
         break;
+    }
     case 3: snprintf(body, sizeof(body), "名称\n%s\n\n所有者\n%s\n\n屏幕：240 × 320", s->name[0] ? s->name : "Codex 助手", s->owner[0] ? s->owner : "-"); break;
     case 4: snprintf(body, sizeof(body), "%s\n\n%s\n%s\n\n请在电脑上运行\nCodex 桥接程序", s->name[0] ? s->name : "Codex 助手", s->ble_connected ? "已连接" : "正在广播", s->ble_encrypted ? "连接已加密" : "连接未加密"); break;
     default: snprintf(body, sizeof(body), "Codex 使用量助手\n\n适用于 FoloToy AI Passport\nESP32-C3 硬件\n\n基于公开的 Buddy 参考分支"); break;
@@ -386,6 +407,7 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
         const char *suffix = "";
         char value[12];
         if (!s->reset_open && i == BUDDY_SETTINGS_BRIGHTNESS) { snprintf(value, sizeof(value), "%u/4", s->brightness_level); suffix = value; }
+        else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "Off" : (s->sound_mode == BUDDY_SOUND_ON ? "On" : "Auto");
         else if (!s->reset_open && i == BUDDY_SETTINGS_BLE) suffix = s->ble_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_TRANSCRIPT) suffix = s->transcript_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_ASCII_PET) suffix = buddy_sprite_name(s->species);
@@ -461,8 +483,12 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
             text(layer, 56, y, 128, active ? COL_BG : COL_INK, menu[i], false, LV_TEXT_ALIGN_CENTER);
         }
     } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
-        panel(layer, 194, 86, COL_GREEN, "任务已完成",
-              "助手已完成当前任务。", "请在电脑上查看结果");
+        buddy_usage_window_t windows[2];
+        /* The single-window home already celebrates through its pet and caption. */
+        if (s->page != BUDDY_PAGE_HOME || buddy_usage_windows(&s->codex_usage, windows) != 1U) {
+            panel(layer, 194, 86, COL_GREEN, "任务已完成",
+                  "助手已完成当前任务。", "请在电脑上查看结果");
+        }
     }
 }
 

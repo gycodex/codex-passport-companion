@@ -993,12 +993,12 @@ static void buddy_on_disconnect(uint16_t conn_handle, int reason)
         buddy_emit(&event);
     }
     if (delete_bonds) {
-        buddy_finish_bond_deletion(NULL);
+        buddy_schedule_bond_work();
     } else if (advertise) {
-        int rc = buddy_reconcile_advertising();
-        if (rc != 0) {
-            ESP_LOGE(s_tag, "Failed to restart BLE advertising: %d", rc);
-        }
+        /* Unwind the GAP disconnect stack before restarting advertising.
+         * NimBLE advertising/logging on this nested path can exhaust the
+         * host task's stack. The queued worker retains retry handling. */
+        buddy_schedule_adv_work();
     }
 }
 
@@ -1009,7 +1009,8 @@ static int buddy_gap_event(struct ble_gap_event *event, void *context)
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status != 0) {
-            return buddy_reconcile_advertising();
+            buddy_schedule_adv_work();
+            return 0;
         }
 
         uint32_t connection_generation;
@@ -1092,7 +1093,8 @@ static int buddy_gap_event(struct ble_gap_event *event, void *context)
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        return buddy_reconcile_advertising();
+        buddy_schedule_adv_work();
+        return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE: {
         struct ble_gap_conn_desc description = {0};

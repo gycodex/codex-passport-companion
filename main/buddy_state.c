@@ -216,6 +216,12 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
         }
         break;
     case BUDDY_SETTINGS_SOUND:
+        state->settings.sound_mode = (uint8_t)((state->settings.sound_mode + 1U) % BUDDY_SOUND_COUNT);
+        if (action != NULL) {
+            action->type = BUDDY_ACTION_SETTINGS;
+            action->settings = state->settings;
+        }
+        break;
     case BUDDY_SETTINGS_WIFI:
     case BUDDY_SETTINGS_LED:
     case BUDDY_SETTINGS_CLOCK_ROTATION:
@@ -325,6 +331,7 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
                                   uint32_t connection_generation, uint64_t now_ms,
                                   buddy_action_t *action)
 {
+    bool was_live = state->connected && !state->heartbeat_stale;
     uint64_t level = heartbeat->codex_usage.present
                          ? heartbeat->codex_usage.completion_sequence
                          : heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;
@@ -367,6 +374,7 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
         state->temporary_character = BUDDY_CHARACTER_CELEBRATE;
         state->temporary_until_ms = now_ms + BUDDY_CELEBRATION_ANIMATION_MS;
         if (action != NULL) {
+            action->play_completion_sound = was_live && heartbeat->connected && heartbeat->codex_usage.present;
             action->type = BUDDY_ACTION_SETTINGS;
             action->settings = state->settings;
         }
@@ -674,6 +682,7 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     memset(snapshot, 0, sizeof(*snapshot));
     snapshot->connection = state->connection;
     snapshot->character = state->character;
+    snapshot->sound_mode = state->settings.sound_mode;
     snapshot->page = state->page;
     snapshot->running = state->running;
     snapshot->total = state->total;

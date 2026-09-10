@@ -481,15 +481,12 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                 flush=True,
             )
         running_count = max(running_count, watcher.running_count)
-        print(
-            "用量数据：可用=%s，5小时已用=%s%%，7天已用=%s%%"
-            % (
-                bool(usage.get("available")),
-                usage.get("primary", {}).get("used", 0),
-                usage.get("secondary", {}).get("used", 0),
-            ),
-            flush=True,
-        )
+        print(f"用量数据：可用={bool(usage.get('available'))}", flush=True)
+        for name in ("primary", "secondary"):
+            window = usage.get(name, {})
+            duration = window.get("duration", 0)
+            if duration > 0:
+                print(f"窗口 {duration} 分钟：已用 {window.get('used', 0)}%", flush=True)
         print(f"正在进行的任务：{running_count}", flush=True)
         if args.dry_run:
             print(heartbeat_payload(usage, watcher, running_count).decode().rstrip())
@@ -500,7 +497,10 @@ async def bridge_loop(args: argparse.Namespace) -> None:
             try:
                 device = await find_device(args.device)
                 print(f"Connecting to {device.name or device.address}…", flush=True)
-                async with BleakClient(device, pair=True, timeout=60.0) as client:
+                # The fixed NUS service layout can use Windows' GATT cache.
+                # Re-enumerating it on rapid reconnects can cancel WinRT requests.
+                options = {"winrt": {"use_cached_services": True}} if sys.platform == "win32" else {}
+                async with BleakClient(device, pair=True, timeout=60.0, **options) as client:
                     await client.start_notify(NUS_TX_UUID, lambda _sender, _data: None)
                     print("Connected. Codex usage and completion alerts are live.", flush=True)
                     timezone_offset = int(

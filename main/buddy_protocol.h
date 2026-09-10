@@ -16,6 +16,9 @@ typedef struct {
     char name[BUDDY_NAME_MAX];
     uint64_t uptime_ms;
     uint64_t free_heap;
+    uint32_t sound_stage;
+    uint32_t sound_play_count;
+    uint8_t sound_mode;
     uint64_t approval_count;
     uint64_t denial_count;
     uint64_t queue_overflow_count;

@@ -27,6 +27,8 @@
 #include "buddy_settings.h"
 #include "buddy_state.h"
 #include "buddy_ui.h"
+#include "buddy_alert.h"
+#include "buddy_sound.h"
 
 #define BUDDY_CRITICAL_QUEUE_DEPTH 1U
 #define BUDDY_BUTTON_QUEUE_DEPTH 4U
@@ -767,6 +769,9 @@ static esp_err_t buddy_orchestrator_status(void *context, const buddy_state_t *s
         !buddy_app_build_status(report, &settings, &runtime)) {
         return ESP_FAIL;
     }
+    report->sound_stage = buddy_sound_stage();
+    report->sound_play_count = buddy_sound_play_count();
+    report->sound_mode = settings.sound_mode;
     return ESP_OK;
 }
 
@@ -805,6 +810,12 @@ static esp_err_t buddy_orchestrator_persist_level(void *context, uint64_t level)
     return buddy_settings_set_highest_celebrated_level(level);
 }
 
+static esp_err_t buddy_orchestrator_persist_sound(void *context, uint8_t mode)
+{
+    (void)context;
+    return buddy_settings_set_sound_mode(mode);
+}
+
 static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
 {
     const buddy_orchestrator_ops_t ops = {
@@ -819,6 +830,7 @@ static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
         .factory_reset = buddy_orchestrator_factory_reset,
         .set_ble_enabled = buddy_orchestrator_set_ble,
         .persist_level = buddy_orchestrator_persist_level,
+        .persist_sound = buddy_orchestrator_persist_sound,
     };
     return ops;
 }
@@ -827,6 +839,11 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
                                  buddy_event_t *result_event)
 {
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
+    uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000ULL;
+    if (action->play_completion_sound && buddy_alert_allowed(state->settings.sound_mode,
+            state->epoch_seconds, state->timezone_offset_seconds, state->time_received_ms, now_ms)) {
+        buddy_sound_notify();
+    }
 
     if (action->type == BUDDY_ACTION_DISPLAY_BACKLIGHT) {
         bsp_display_backlight(action->brightness_percent);

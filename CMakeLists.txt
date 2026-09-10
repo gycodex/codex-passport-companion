@@ -8,5 +8,5 @@ idf_build_set_property(
     "${CMAKE_CURRENT_LIST_DIR}/bootloader_components/"
     APPEND)
 
-set(PROJECT_VER "0.1.0")
+set(PROJECT_VER "0.1.0-soft-alert")
 project(FoloToy-AI-Passport)
