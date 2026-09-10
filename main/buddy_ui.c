@@ -294,9 +294,9 @@ static void usage_reset_text(char *destination, size_t size, uint64_t resets_at,
     }
 }
 
-static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
+static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s, bool compact)
 {
-    const buddy_i4_clip_t clip = {.x = 16, .y = 180, .w = 208, .h = 78};
+    const buddy_i4_clip_t clip = {.x = 16, .y = compact ? 204 : 180, .w = 208, .h = compact ? 66 : 78};
     buddy_sprite_bounds_t bounds;
     uint8_t state = art_state(s->character);
     int x = 88;
@@ -306,8 +306,8 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     if (buddy_sprite_bounds(s->species, state, s_tick, &bounds)) {
         x = (UI_W - bounds.w) / 2 - bounds.x;
     }
-    rule(layer, 96, 255, 48, COL_LINE);
-    buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, 188);
+    rule(layer, 96, compact ? 270 : 255, 48, COL_LINE);
+    buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, compact ? 208 : 188);
     if (!(s->ble_connected || s->lan_connected) || s->heartbeat_stale) {
         caption = "等待同步";
     } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
@@ -317,7 +317,7 @@ static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
         caption = "工作中…";
         color = COL_GREEN;
     }
-    text(layer, 18, 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
+    text(layer, 18, compact ? 274 : 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
 }
 
 static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
@@ -326,9 +326,10 @@ static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     char reset[32];
     buddy_usage_window_t windows[2];
     size_t count = buddy_usage_windows(&s->codex_usage, windows);
-    text(layer, 8, 44, 224, COL_ORANGE, "Codex 使用量", true, LV_TEXT_ALIGN_CENTER);
+    bool compact = count == 2U;
+    text(layer, 8, 38, 224, COL_ORANGE, "Codex 使用量", true, LV_TEXT_ALIGN_CENTER);
     snprintf(value, sizeof(value), "进行中：%u 个任务", s->running);
-    text(layer, 8, 64, 224, s->running > 0 ? COL_GREEN : COL_DIM,
+    text(layer, 8, 58, 224, s->running > 0 ? COL_GREEN : COL_DIM,
          value, false, LV_TEXT_ALIGN_CENTER);
     if (count == 0U) {
         wrapped_text(layer, 22, 113, 196, COL_INK,
@@ -336,23 +337,23 @@ static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     }
     for (size_t index = 0; index < count; ++index) {
         const buddy_usage_window_t *window = &windows[index];
-        int top = 80 + (int)index * 98;
+        int top = 80 + (int)index * (compact ? 64 : 98);
         lv_color_t color = index == 0U ? COL_GREEN : COL_YELLOW;
-        box(layer, 8, top, 224, 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
-        text(layer, 18, top + 13, 100, COL_INK, window->label,
+        box(layer, 8, top, 224, compact ? 58 : 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
+        text(layer, 18, top + (compact ? 4 : 13), 100, COL_INK, window->label,
              false, LV_TEXT_ALIGN_LEFT);
         snprintf(value, sizeof(value), "剩余 %u%%", window->remaining);
-        text(layer, 116, top + 13, 106, window->remaining < 20U ? COL_RED : color,
+        text(layer, 116, top + (compact ? 4 : 13), 106, window->remaining < 20U ? COL_RED : color,
              value, false, LV_TEXT_ALIGN_RIGHT);
         for (unsigned i = 0; i < 10U; ++i) {
             bool on = i * 10U < window->remaining;
-            box(layer, 18 + (int)i * 20, top + 42, 16, 13, on ? color : COL_LINE,
+            box(layer, 18 + (int)i * 20, top + (compact ? 26 : 42), 16, compact ? 8 : 13, on ? color : COL_LINE,
                 on ? color : COL_LINE, 0, 1);
         }
         usage_reset_text(reset, sizeof(reset), window->resets_at, s);
-        text(layer, 18, top + 67, 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
+        text(layer, 18, top + (compact ? 39 : 67), 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
     }
-    if (count == 1U) draw_home_companion(layer, s);
+    if (count > 0U) draw_home_companion(layer, s, compact);
     text(layer, 8, 297, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
 }
 
