@@ -125,3 +125,7 @@ Settings > Sound cycles Off / On / Auto and persists the selection. Auto is the 
 ### Working dim mode
 
 The existing 1/5/10 minute auto-sleep setting dims active work to the minimum 20% backlight after the timer expires, while idle time still turns the display off. Routine heartbeats do not restart the timer. Completion, a transition to idle, a key press, or an attention prompt restores the selected brightness. Never disables both automatic behaviors. Device menus, status text and provisioning pages use Simplified Chinese.
+
+## License and release status
+
+The root [MIT license](LICENSE) covers original project contributions; inherited code and dependency terms are described in [NOTICE](NOTICE). Upstream authorization and remaining validation are tracked in [release checks](docs/RELEASE_CHECKLIST.md). Windows Doubao integration is experimental, opt-in, and restricted to an exact verified build. See [voice setup](docs/VOICE.md).

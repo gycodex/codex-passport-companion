@@ -31,3 +31,24 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 DEALINGS IN THE SOFTWARE.
 
 Upstream license: https://github.com/anthropics/claude-desktop-buddy/blob/main/LICENSE
+
+## License scope and source inventory
+
+The root MIT license covers original contributions by this project's contributors.
+It does not relicense third-party code or grant rights on behalf of upstream authors.
+The original foundation is zt20/codex-usage-ai-passport; its public default branch
+had no project-level LICENSE when reviewed on 2026-09-11. Confirm permission for
+redistribution of that inherited code before declaring the complete distribution
+MIT-licensed. This is an unresolved release item, not a license grant.
+
+The IMA ADPCM implementation retains the FoloToy MIT notice at
+third_party/xiabill-ai-passport-LICENSE. Runtime dependencies retain their own
+licenses; this repository does not redistribute VB-CABLE, Doubao or Frida binaries.
+
+The Windows compatibility investigation consulted
+https://github.com/miaomiaozii/windows-remote-mic-app (GPL-3.0-only), especially its
+report that Doubao filters injected keyboard events. No source files from that
+repository are vendored here. Our callback address was located in the installed
+Doubao build; the adapter limits changes to Passport-marked event copies and
+checks that executable's exact hash. This attribution does not relicense the
+reference project.

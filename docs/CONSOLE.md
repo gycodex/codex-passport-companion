@@ -32,7 +32,7 @@ python tools/passport_console.py
 
 - `Save` 保存配置；`Disconnect` 停止同步并释放连接，配置保留。
 - `Connect when this console starts` 表示**启动控制台时自动连接**，不是系统开机自启。
-- `Test completion reminder` 在当前连接中发送完成事件，不另开连接。事件会推进本机完成序号，并遵循设备音量和夜间静音规则。
+- 「提醒检查 → 播放提醒」 在当前连接中发送完成事件，不另开连接。事件会推进本机完成序号，并遵循设备音量和夜间静音规则。
 - 左侧显示实际返回的额度窗口、任务数量和最近同步时间。未返回的窗口不显示。
 - 默认优先从当前用户正在运行的 Codex CLI / app-server 进程取得可执行文件路径，无需填写。排除桌面界面进程和其他用户的进程；进程退出或不可读时自动跳过。找不到运行进程时，再查 Windows 常见 npm 安装位置及 macOS 的 PATH、Homebrew、nvm 等位置。进程参数仅用于辨别 CLI，不保存或输出到日志。特殊安装位置可在「高级设置」取消「自动查找 Codex」，再手动指定。
 
@@ -40,8 +40,10 @@ python tools/passport_console.py
 
 页面及 API 仅监听 `127.0.0.1`，校验 Host、Origin 和每次程序启动生成的请求令牌；页面不加载外部字体或脚本。配置保存在 `$CODEX_HOME/passport-console`，未设置时为 `~/.codex/passport-console`。`pairing.json` 含密钥，不应分享或提交到 Git；网页状态和活动日志不返回密钥。文件使用当前用户权限保存（Unix 新文件模式 0600）。同一系统账户中的其他程序仍能读取这些配置。
 
-Windows 已验证页面、导入保存、重连与断开；Python 自动测试覆盖鉴权、输入校验、配置保密和桥接生命周期，原有 LAN 测试覆盖加密传输。此次设备未响应原 IP，未完成新版控制台的实机同步/提示音验证。macOS 实机、BLE 实机连接及长时间运行测试尚未执行。
+Windows 本机已验证控制台启动、LAN 连接、输入法适配及语音试用。另一台电脑首次安装、macOS、BLE 实机完整验收和规定的连接循环／长时间 soak 均为 NOT RUN，详见 [发布检查](RELEASE_CHECKLIST.md)。
+
+豆包需要在语音设置中主动启用实验性适配，并在退出已有后台后使用 `start-console-admin.cmd`。普通用户无需管理员权限或 Frida。兼容构建限制和降级方式见 [语音说明](VOICE.md)。
 
 ## English quick start
 
-Install Python 3.10+ and the Codex CLI, then sign in to Codex. Run `start-console.cmd` on Windows or `bash start-console.command` on macOS. Select LAN (device IP + pairing JSON) or Bluetooth (scan + OS pairing prompt), then **Save & connect**. Existing firmware is supported without a console-specific update. Keep the launcher terminal running; closing the browser tab does not stop the bridge. Autoconnect applies when the console starts, not at OS login. macOS and physical BLE validation are pending.
+Install Python 3.10+ and the Codex CLI, then sign in to Codex. Run `start-console.cmd` on Windows or `bash start-console.command` on macOS. Select LAN (device IP + pairing JSON) or Bluetooth (scan + OS pairing prompt), then **Save & connect**. Existing firmware is supported without a console-specific update. On macOS, keep the launcher terminal running. Windows runs in the background; closing the browser tab does not stop the bridge. Autoconnect applies when the console starts, not at OS login. macOS and physical BLE validation are pending.
