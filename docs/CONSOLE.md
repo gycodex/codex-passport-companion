@@ -1,49 +1,65 @@
-# 本机浏览器控制台 / Local browser console
+# 本机控制台：安装与连接
 
-本功能在 `feature/lan-connection` 分支。控制台兼容已有 BLE 固件和本分支 LAN 固件，**不需要为了控制台重新刷机**。设备当前选择哪种连接模式，就在网页选对应模式；网页不能远程切换设备的 BLE/Wi-Fi 模式。
+使用 `feature/lan-connection` 分支。网页运行在自己的电脑上，地址为 `http://127.0.0.1:8766/`，不需要部署网站。
 
-## 启动
+## 1. 准备与启动
 
-先安装 Python 3.10+、Codex CLI，并在当前系统用户下完成 Codex 登录。
+先安装 **Python 3.10+**（Windows 建议 64 位 Python 3.12）、Codex CLI，并在当前用户下登录 Codex。
 
-- **Windows：**双击仓库根目录 `start-console.vbs`（无黑窗口），或使用 `start-console.cmd` 查看启动错误。首次启动会检查 Python 版本、创建独立 Python 环境并安装依赖。旧版 Python 环境会备份后重建；如果控制台已在运行，直接打开网页。
-- **macOS：**在终端执行 `bash start-console.command`。也可先 `chmod +x start-console.command`，然后双击启动。首次使用蓝牙时允许系统的蓝牙访问请求。
-- 浏览器自动打开 `http://127.0.0.1:8766/`。以后重复启动会打开已有控制台，不建立第二个桥接。
-- 关闭浏览器标签页不会断开；Windows 后台不需要保留终端，点击网页底部「退出后台」可退出程序并断开设备。macOS 仍需保持启动终端运行，也可按 Ctrl+C 退出。
+| 系统 | 启动方式 |
+| --- | --- |
+| Windows | 双击 `start-console.vbs`，无黑窗口；启动失败时用 `start-console.cmd` 查看错误 |
+| macOS | 终端执行 `bash start-console.command`，允许系统蓝牙权限，保持终端运行 |
 
-手动启动：
+首次启动自动创建 `.venv-console` 并安装依赖，需要联网；以后会复用环境。已有后台时再次启动只打开网页。Codex 路径默认优先从当前运行的 CLI 进程查找，通常不必填写。
 
-```sh
-python -m pip install -r tools/requirements-console.txt
-python tools/passport_console.py
+仅使用控制台管理已有功能，不需要专门刷固件；使用蓝牙语音、首页录音等新增功能，需要本分支新版固件，见 [编译与烧录](../README.zh_CN.md#编译与烧录)。
+
+## 2. 连接设备
+
+| 连接方式 | 设备准备 | 网页操作 |
+| --- | --- | --- |
+| 蓝牙 | 进入蓝牙模式，在设备设置中开启蓝牙 | 选「蓝牙」→「搜索蓝牙设备」→选择设备→「保存并连接」；首次按系统提示输入设备上的六位配对码 |
+| 局域网 | 按 [配网说明](LAN.md) 接入 2.4 GHz Wi-Fi | 选「局域网 / Wi-Fi」→填写设备 IP→导入 `passport-lan.json`→「保存并连接」 |
+
+电脑可通过网线或 Wi-Fi 接入局域网，但必须能访问设备，访客网络隔离可能阻止连接。同一设备只连接一台电脑，换电脑前先断开旧桥接。
+
+设备左上角显示 **已连接BLE / 已连接LAN**，右上角显示电量。网页里的连接方式必须与设备模式一致，不会单凭选择网页选项就切换设备无线模式。
+
+## 切换设备连接模式
+
+首次未配网默认蓝牙。已配网设备可通过 USB 切换，**保留 Wi-Fi 信息和配对密钥**。先断开网页桥接，再执行：
+
+```powershell
+python -m pip install -r tools/requirements-lan.txt
+python tools/configure_lan.py --port COM3 --transport ble
+# 切回已配置的局域网：
+python tools/configure_lan.py --port COM3 --transport lan
 ```
 
-可用参数：`--no-browser`、`--port 8766`、`--config-dir 路径`。不同端口启动多个程序会各自占用桥接，请避免同时连接同一设备。
+`COM3` 替换为本机串口，macOS 使用实际 `/dev/cu.*` 路径。切换后设备重启；蓝牙模式必要时在设备设置中开启蓝牙。`--disable` 会清除 Wi-Fi 与密钥，不是普通切换方式。
 
-## 首次连接
+## 3. 日常使用
 
-**局域网**：选 `Wi-Fi / LAN`，输入设备网络信息页显示的 IPv4 地址，点击 `Import pairing file` 导入配网下载的 `passport-lan.json`，再点 `Save & connect`。电脑可用网线，设备需接 2.4 GHz Wi-Fi，两者须在可互通的局域网。设备重新获取地址后，在断开状态修改 IP 即可。
+- **保存**：仅保存设置；**断开连接**：停止同步，保留设置。
+- **启动时自动连接**：启动控制台后连接设备，不等于系统开机自启。
+- **提醒检查 → 播放提醒**：测试设备完成提示，遵循设备音量和夜间静音设置。
+- **退出**：断开设备并停止后台，随后尝试关闭当前网页。浏览器不允许自动关页时会显示已退出提示，可手动关闭。
+- 直接关闭网页不会停止后台。
 
-**蓝牙**：设备须已处于蓝牙模式。选 `Bluetooth` → `Search for devices`，选择设备，点 `Save & connect`。首次按系统配对窗口输入设备屏幕上的六位数字。电脑须有蓝牙适配器；通过本机 Python 连接，浏览器不需要 Web Bluetooth 支持。
+使用设备麦克风请继续阅读 [语音输入：三步配置](VOICE.md#windows三步配置)。豆包需要权限时可直接在网页「授权并连接」，不用手动切换启动脚本。
 
-已有命令行桥接需先退出；一个设备同一时间只由一台电脑同步。超时可能是 IP 改变、网络隔离、设备离线或其他电脑仍占用连接，不能仅凭超时断言设备被占用。
+## 换电脑与排查
 
-## 日常使用
+新电脑重新安装依赖和虚拟音频驱动；不要复制 `.venv-console`。蓝牙重新配对，局域网私下复制并导入配对文件；输入法快捷键和音频设备需在新电脑重新选择。
 
-- `Save` 保存配置；`Disconnect` 停止同步并释放连接，配置保留。
-- `Connect when this console starts` 表示**启动控制台时自动连接**，不是系统开机自启。
-- 「提醒检查 → 播放提醒」 在当前连接中发送完成事件，不另开连接。事件会推进本机完成序号，并遵循设备音量和夜间静音规则。
-- 左侧显示实际返回的额度窗口、任务数量和最近同步时间。未返回的窗口不显示。
-- 默认优先从当前用户正在运行的 Codex CLI / app-server 进程取得可执行文件路径，无需填写。排除桌面界面进程和其他用户的进程；进程退出或不可读时自动跳过。找不到运行进程时，再查 Windows 常见 npm 安装位置及 macOS 的 PATH、Homebrew、nvm 等位置。进程参数仅用于辨别 CLI，不保存或输出到日志。特殊安装位置可在「高级设置」取消「自动查找 Codex」，再手动指定。
+| 问题 | 处理 |
+| --- | --- |
+| 启动后网页打不开 | Windows 运行 `start-console.cmd` 查看错误；确认 Python 版本和依赖下载网络 |
+| 找不到蓝牙设备 | 确认电脑有蓝牙、设备处于蓝牙模式且已开启，没有被其他电脑占用 |
+| 局域网连接超时 | 检查 IP、网络隔离、设备在线情况和旧电脑桥接 |
+| 找不到 Codex | 先运行并登录 Codex CLI；特殊安装路径在高级设置中手动指定 |
 
-## 本机数据与验证范围
+配置和日志位于 `$CODEX_HOME/passport-console`，默认 `~/.codex/passport-console`。`pairing.json` 含密钥，不要公开。网页只监听本机地址，校验 Host、Origin 和请求令牌。详细测试范围见 [验证记录](RELEASE_CHECKLIST.md)。
 
-页面及 API 仅监听 `127.0.0.1`，校验 Host、Origin 和每次程序启动生成的请求令牌；页面不加载外部字体或脚本。配置保存在 `$CODEX_HOME/passport-console`，未设置时为 `~/.codex/passport-console`。`pairing.json` 含密钥，不应分享或提交到 Git；网页状态和活动日志不返回密钥。文件使用当前用户权限保存（Unix 新文件模式 0600）。同一系统账户中的其他程序仍能读取这些配置。
-
-Windows 本机已验证控制台启动、LAN 连接、输入法适配及语音试用。另一台电脑首次安装、macOS、BLE 实机完整验收和规定的连接循环／长时间 soak 均为 NOT RUN，详见 [发布检查](RELEASE_CHECKLIST.md)。
-
-豆包需要在语音设置中主动启用实验性适配，并在退出已有后台后使用 `start-console-admin.cmd`。普通用户无需管理员权限或 Frida。兼容构建限制和降级方式见 [语音说明](VOICE.md)。
-
-## English quick start
-
-Install Python 3.10+ and the Codex CLI, then sign in to Codex. Run `start-console.cmd` on Windows or `bash start-console.command` on macOS. Select LAN (device IP + pairing JSON) or Bluetooth (scan + OS pairing prompt), then **Save & connect**. Existing firmware is supported without a console-specific update. On macOS, keep the launcher terminal running. Windows runs in the background; closing the browser tab does not stop the bridge. Autoconnect applies when the console starts, not at OS login. macOS and physical BLE validation are pending.
+开发者可手动运行 `python -m pip install -r tools/requirements-console.txt`，再执行 `python tools/passport_console.py`。支持 `--no-browser`、`--port`、`--config-dir` 参数。

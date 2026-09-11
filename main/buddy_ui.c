@@ -236,7 +236,8 @@ static void draw_status_bar(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     time_t epoch = (time_t)(s->epoch_seconds + s->timezone_offset_seconds + age_ms / 1000U);
     struct tm tm_value;
 
-    snprintf(left, sizeof(left), "%s", (s->ble_connected || s->lan_connected) ? "已连接" : "未连接");
+    snprintf(left, sizeof(left), "%s", s->lan_connected ? "已连接LAN" :
+             (s->ble_connected ? "已连接BLE" : "未连接"));
     if (s->epoch_seconds > 0 && gmtime_r(&epoch, &tm_value) != NULL) {
         snprintf(center, sizeof(center), "%02d:%02d", tm_value.tm_hour, tm_value.tm_min);
     } else {
@@ -250,9 +251,9 @@ static void draw_status_bar(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     } else {
         snprintf(battery, sizeof(battery), "电量--");
     }
-    text(layer, 8, 7, 72, (s->ble_connected || s->lan_connected) ? COL_GREEN : COL_DIM, left, false, LV_TEXT_ALIGN_LEFT);
-    text(layer, 80, 7, 72, COL_DIM, center, false, LV_TEXT_ALIGN_CENTER);
-    text(layer, 152, 7, 80, battery_color, battery, false, LV_TEXT_ALIGN_RIGHT);
+    text(layer, 8, 7, 80, (s->ble_connected || s->lan_connected) ? COL_GREEN : COL_DIM, left, false, LV_TEXT_ALIGN_LEFT);
+    text(layer, 88, 7, 56, COL_DIM, center, false, LV_TEXT_ALIGN_CENTER);
+    text(layer, 144, 7, 88, battery_color, battery, false, LV_TEXT_ALIGN_RIGHT);
     rule(layer, 8, 25, 224, COL_LINE);
 }
 
@@ -373,11 +374,9 @@ static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
         snprintf(value, sizeof(value), "%02u:%02u / 02:00  下键结束",
                  s->voice_seconds / 60U, s->voice_seconds % 60U);
         text(layer, 8, 297, 224, COL_GREEN, value, false, LV_TEXT_ALIGN_CENTER);
-    } else if (s->lan_mode) {
+    } else {
         text(layer, 8, 284, 224, COL_DIM, "上键换页  下键语音", false, LV_TEXT_ALIGN_CENTER);
         text(layer, 8, 302, 224, COL_DIM, "长按确认菜单", false, LV_TEXT_ALIGN_CENTER);
-    } else {
-        text(layer, 8, 297, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
     }
 }
 

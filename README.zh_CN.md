@@ -12,9 +12,9 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 蓝牙或局域网桥接首次连接、断线恢复并收到首个有效状态时，会播放一声约 100 毫秒的连接提示音。普通同步不重复播放；遵循声音开关和自动模式的夜间静音设置。
 
-**设备麦克风：**新固件与新版控制台可通过局域网把设备声音交给讯飞、豆包或 Typeless 等输入法，使用可配置快捷键开始和结束。需要安装虚拟音频线；当前蓝牙不传音频。详见 [语音输入设置](docs/VOICE.md)。
+**设备麦克风：**新固件与新版控制台可通过蓝牙或局域网把设备声音交给讯飞、豆包或 Typeless 等输入法，使用可配置快捷键开始和结束。需要安装虚拟音频线；蓝牙需要安全配对及足够的协商数据包大小，录音稳定性仍需实测。详见 [语音输入设置](docs/VOICE.md)。
 
-**浏览器控制台：**Windows 双击 `start-console.cmd`，macOS 执行 `bash start-console.command`，即可在本机网页管理蓝牙/局域网连接、保存配对配置、查看状态和测试完成提醒。控制台无需更新固件。详见 [启动与使用说明](docs/CONSOLE.md)。
+**浏览器控制台：**Windows 双击 `start-console.cmd`，macOS 执行 `bash start-console.command`，即可在本机网页管理蓝牙/局域网连接、保存配对配置、查看状态和测试完成提醒。已有功能无需重刷；新增语音功能需要对应新版固件。详见 [启动与使用说明](docs/CONSOLE.md)。
 
 **局域网连接分支：**新增加密 Wi‑Fi 传输，无蓝牙的台式机也可使用。支持手机连接设备热点，在网页中扫描、填写 Wi‑Fi 并下载配对文件；也可通过 USB 配网。保留蓝牙模式。详见 [局域网配网与使用说明](docs/LAN.md)。
 
@@ -22,11 +22,36 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 加密 Nordic UART BLE、绑定与自动重连。新增的本机桥接器负责把 Codex 数据转换成
 设备协议。
 
+## 快速开始
+
+使用 **`feature/lan-connection`** 分支：
+
+```sh
+git clone --branch feature/lan-connection https://github.com/gycodex/codex-passport-companion.git
+cd codex-passport-companion
+```
+
+1. 给 FoloToy AI Passport 刷入本分支固件，见下方「编译与烧录」。已有最新版固件可跳过。
+2. 电脑安装 Python 3.10+ 和 Codex CLI，完成 Codex 登录。
+3. Windows 双击 `start-console.vbs`；macOS 执行 `bash start-console.command`。
+4. 在网页选择蓝牙或局域网，按提示配对并连接。需要麦克风时再配置语音输入。
+
+| 想做什么 | 阅读这份说明 |
+| --- | --- |
+| 启动、连接、切换蓝牙 / 局域网、换电脑 | [控制台使用](docs/CONSOLE.md) |
+| 给设备配置 Wi-Fi | [局域网配网](docs/LAN.md) |
+| 讯飞 / 豆包语音输入 | [麦克风与输入法](docs/VOICE.md) |
+| 已验证内容、已知限制和发布事项 | [验证记录](docs/RELEASE_CHECKLIST.md) |
+
+设备首页：**上键换页，下键语音，长按确认打开菜单**。左上角显示 `已连接BLE` 或 `已连接LAN`，右上角显示电量。蓝牙和局域网都支持用量、任务状态、完成提醒及设备麦克风；同一设备一次只连接一台电脑。
+
+语音需要虚拟音频线和本机输入法，不是系统原生蓝牙麦克风。Windows 豆包适配为实验性功能，仅支持已验证版本。蓝牙已试用，但延迟、识别率、其他电脑及长时间稳定性仍需验证。
+
 ## 数据流与隐私
 
 ```text
 Codex app-server ── 限额快照 ───────────┐
-                                        ├─ 本机 Python 桥 ── 加密 BLE ── Passport
+                                        ├─ 本机 Python 桥 ── 加密 BLE / LAN ── Passport
 ~/.codex/sessions ─ 消息元数据 ─────────┘
 ```
 
@@ -40,10 +65,9 @@ Codex 返回的是已用百分比而不是绝对消息数，所以设备显示
 
 ## 编译与烧录
 
-使用 ESP-IDF 5.5.3，目标芯片为 ESP32-C3：
+安装并进入 ESP-IDF 5.5.3 的开发终端，目标芯片为 ESP32-C3：
 
 ```bash
-get_idf553
 idf.py set-target esp32c3
 idf.py build
 idf.py flash monitor
@@ -85,7 +109,6 @@ python3 tools/codex_bridge.py --device Codex-A1B2C3
 ## 测试
 
 ```bash
-get_idf553
 cmake -S tests -B build-host
 cmake --build build-host
 ctest --test-dir build-host --output-on-failure

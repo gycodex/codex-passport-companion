@@ -485,8 +485,13 @@ async def open_transport(args):
         print(f"Connecting to {device.name or device.address}…", flush=True)
         options = {"winrt": {"use_cached_services": True}} if sys.platform == "win32" else {}
         async with BleakClient(device, pair=True, timeout=60.0, **options) as client:
-            await client.start_notify(NUS_TX_UUID, lambda _sender, _data: None)
-            yield client
+            from ble_transport import BleVoiceClient
+            transport = BleVoiceClient(client)
+            await client.start_notify(NUS_TX_UUID, transport.receive)
+            try:
+                yield transport
+            finally:
+                await transport.close()
 
 
 async def bridge_loop(args: argparse.Namespace, control=None) -> None:

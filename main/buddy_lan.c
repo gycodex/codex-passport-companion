@@ -129,6 +129,9 @@ bool buddy_lan_configured(void)
             size == sizeof(s_config) && s_config.magic == 0x4c414e31 &&
             s_config.ssid[0] && memchr(s_config.ssid, 0, sizeof(s_config.ssid)) &&
             memchr(s_config.password, 0, sizeof(s_config.password));
+        uint8_t bluetooth = 0;
+        (void)nvs_get_u8(nvs, "bluetooth", &bluetooth);
+        if (bluetooth) s_configured = false;
         nvs_close(nvs);
     }
     s_loaded = true;
@@ -403,7 +406,16 @@ bool buddy_lan_usb_command(const char *line)
     cJSON *json = parse_flat_object(line+18);
     const cJSON *disable = cJSON_GetObjectItemCaseSensitive(json, "disable");
     esp_err_t err = ESP_ERR_INVALID_ARG;
-    if (cJSON_IsTrue(disable)) {
+    const cJSON *bluetooth = cJSON_GetObjectItemCaseSensitive(json, "bluetooth");
+    if (cJSON_IsBool(bluetooth)) {
+        nvs_handle_t nvs;
+        err = nvs_open("passport_lan", NVS_READWRITE, &nvs);
+        if (err == ESP_OK) {
+            err = nvs_set_u8(nvs, "bluetooth", cJSON_IsTrue(bluetooth));
+            if (err == ESP_OK) err = nvs_commit(nvs);
+            nvs_close(nvs);
+        }
+    } else if (cJSON_IsTrue(disable)) {
         err = buddy_lan_forget();
     } else {
         const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(json, "ssid");
@@ -420,6 +432,7 @@ bool buddy_lan_usb_command(const char *line)
             err = nvs_open("passport_lan", NVS_READWRITE, &nvs);
             if (err == ESP_OK) {
                 err = nvs_set_blob(nvs, "config", &config, sizeof(config));
+                if (err == ESP_OK) err = nvs_set_u8(nvs, "bluetooth", 0);
                 if (err == ESP_OK) err = nvs_commit(nvs);
                 nvs_close(nvs);
             }
@@ -523,6 +536,7 @@ static esp_err_t portal_save(httpd_req_t *req)
         err = nvs_open("passport_lan", NVS_READWRITE, &nvs);
         if (err == ESP_OK) {
             err = nvs_set_blob(nvs, "config", &config, sizeof(config));
+                if (err == ESP_OK) err = nvs_set_u8(nvs, "bluetooth", 0);
             if (err == ESP_OK) err = nvs_commit(nvs);
             nvs_close(nvs);
         }

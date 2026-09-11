@@ -112,8 +112,22 @@ class Controller:
         self.stop_requested = False
         self.loop = asyncio.new_event_loop()
         self.action_lock = asyncio.Lock()
-        self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+        self.thread = threading.Thread(target=self.run_loop, daemon=True)
         self.thread.start()
+
+    def run_loop(self):
+        # WinRT BLE and WASAPI share this worker. Hold an MTA reference for its
+        # lifetime so reopening audio cannot leave subsequent BLE scans in STA.
+        com = None
+        if sys.platform == "win32":
+            import ctypes
+            com = ctypes.OleDLL("ole32")
+            com.CoInitializeEx(None, 0)
+        try:
+            self.loop.run_forever()
+        finally:
+            if com is not None:
+                com.CoUninitialize()
 
     def report(self, kind, **data):
         with self.lock:
@@ -314,6 +328,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.authorized(True):
+            # Drain a bounded body before closing: unread bytes can turn a 403
+            # into a TCP reset on Windows. Never parse or act on this content.
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if 0 < size <= 65536:
+                    self.connection.settimeout(.25)
+                    self.rfile.read(size)
+            except (ValueError, OSError):
+                pass
             return self.reply(403, {"error": "Forbidden"})
         try:
             size = int(self.headers.get("Content-Length", "0"))

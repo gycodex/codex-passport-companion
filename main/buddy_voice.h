@@ -9,7 +9,7 @@ typedef struct {
     unsigned seconds, peak;
 } buddy_voice_status_t;
 
-/* Only physical application actions may start recording. Poll grants a 2 s lease. */
+/* Only physical application actions may start recording. Start requires a poll within 2 s; active recording tolerates 5 s without a poll. */
 bool buddy_voice_toggle(void);
 void buddy_voice_disconnect(void);
 void buddy_voice_stop(void);

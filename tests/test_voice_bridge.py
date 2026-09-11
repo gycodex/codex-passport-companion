@@ -127,6 +127,34 @@ class ValidationTests(unittest.TestCase):
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_network_gap_does_not_replay_silence_before_fresh_speech(self):
+        chunks = []
+        speech = b'\x01\x00' * 320
+        class Output:
+            dropped = 0
+            def __init__(self, _): pass
+            def push(self, pcm): chunks.append(pcm)
+            async def drain(self): pass
+            def close(self): pass
+        class Keys:
+            enabled = False
+            start = stop = []
+            def __init__(self, _): pass
+            def send(self, key): pass
+        class Client:
+            is_connected = True
+            responses = iter([packet(recording=True, pcm=base64.b64encode(speech).decode()),
+                packet(recording=True, sequence=24, pcm=base64.b64encode(speech).decode()),
+                packet(sequence=25)])
+            async def request(self, payload):
+                try: return next(self.responses)
+                except StopIteration:
+                    self.is_connected = False
+                    return packet(sequence=25)
+        with patch('voice_bridge.AudioOutput', Output), patch('voice_bridge.Shortcuts', Keys):
+            await voice_loop(Client(), {'voice_output':'test'}, lambda *a, **k: None)
+        self.assertEqual(chunks, [speech, speech])
+
     async def test_parent_cancel_during_cleanup_is_not_swallowed(self):
         cleaning = asyncio.Event()
         async def child(*args):

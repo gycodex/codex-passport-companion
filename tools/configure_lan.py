@@ -33,12 +33,13 @@ def main():
     mode.add_argument("--status", action="store_true", help="Read Wi-Fi IP and connection status")
     mode.add_argument("--disable", action="store_true", help="Forget Wi-Fi and reboot into Bluetooth mode")
     mode.add_argument("--setup", action="store_true", help="Open the phone Wi-Fi setup hotspot")
+    mode.add_argument("--transport", choices=("ble", "lan"), help="Switch transport without deleting Wi-Fi pairing")
     parser.add_argument("--key-file", default=str(Path.home()/".codex"/"passport-lan.json"))
     args = parser.parse_args()
     import serial
     config = None
     previous_key = None
-    if not args.status and not args.disable and not args.setup:
+    if not args.status and not args.disable and not args.setup and not args.transport:
         ssid = input("2.4 GHz Wi-Fi name (SSID): ")
         password = getpass.getpass("Wi-Fi password (hidden; empty for an open network): ")
         if not 1 <= len(ssid.encode("utf-8")) <= 32 or not (password == "" or 8 <= len(password.encode("utf-8")) <= 63):
@@ -46,13 +47,17 @@ def main():
         config = {"ssid": ssid, "password": password, "key": secrets.token_hex(32)}
     port = serial.Serial()
     port.port, port.baudrate, port.timeout = args.port, 115200, 0.3
-    port.dtr = False; port.rts = False
+    port.dtr = True; port.rts = False
     port.open()
     try:
         # Allow the native USB endpoint to settle after opening it on Windows.
         time.sleep(0.3)
         if args.status:
             print(json.dumps(exchange(port, "FAP_LAN_STATUS_V1"), ensure_ascii=False))
+        elif args.transport:
+            result = exchange(port, "FAP_LAN_CONFIG_V1 " + json.dumps({"bluetooth": args.transport == "ble"}))
+            if not result.get("saved"): raise RuntimeError("Transport switch failed")
+            print("Transport saved; restarting without deleting Wi-Fi pairing")
         elif args.setup:
             if not exchange(port, "FAP_LAN_SETUP_V1").get("saved"):
                 raise RuntimeError("Could not enter setup mode")

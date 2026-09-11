@@ -879,9 +879,9 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
     static bool voice_wifi_awake;
     static wifi_ps_type_t previous_wifi_ps;
     if (state->page != BUDDY_PAGE_HOME || state->menu_open || state->prompt.id[0] ||
-        state->confirmation_pending || state->passkey_visible || !buddy_lan_connected()) buddy_voice_stop();
+        state->confirmation_pending || state->passkey_visible || !(s_lan_mode ? buddy_lan_connected() : buddy_ble_is_encrypted())) buddy_voice_stop();
     else if (action->voice_toggle && buddy_voice_toggle()) {
-        if (!voice_wifi_awake && esp_wifi_get_ps(&previous_wifi_ps) == ESP_OK) {
+        if (s_lan_mode && !voice_wifi_awake && esp_wifi_get_ps(&previous_wifi_ps) == ESP_OK) {
             voice_wifi_awake = esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK;
         }
         buddy_sound_voice_wake();
@@ -994,8 +994,8 @@ static void buddy_render(buddy_state_t *state, const buddy_action_t *action, uin
 
     /* A full indexed canvas is CPU-heavy with Wi-Fi's flash-resident driver.
      * Match the pet's 5 fps animation clock and leave time for LAN/USB/idle. */
-    if (s_lan_mode && now_ms - last_lan_render_ms < 200U) return;
-    if (s_lan_mode) last_lan_render_ms = now_ms;
+    if ((s_lan_mode || buddy_voice_recording()) && now_ms - last_lan_render_ms < 200U) return;
+    last_lan_render_ms = now_ms;
 
     buddy_state_snapshot(state, &snapshot);
     buddy_voice_status_t voice;
@@ -1022,6 +1022,20 @@ static bool buddy_handle_rx(buddy_state_t *state, buddy_rx_slot_t *slot,
 {
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
 
+    if (slot->length == 16 &&
+        (memcmp(slot->data, "{\"voice\":\"poll\"}", 16) == 0 ||
+         memcmp(slot->data, "{\"voice\":\"stop\"}", 16) == 0)) {
+        if (!buddy_ble_is_generation_secure(slot->connection_generation)) return false;
+        static char voice_reply[2048];
+        if (memcmp(slot->data, "{\"voice\":\"stop\"}", 16) == 0) buddy_voice_disconnect();
+        size_t length = buddy_voice_poll(voice_reply, sizeof(voice_reply) - 1);
+        if (length) {
+            voice_reply[length++] = '\n';
+            if (buddy_ble_send_for_generation(voice_reply, length, slot->connection_generation) != ESP_OK)
+                buddy_voice_disconnect();
+        }
+        return false;
+    }
     (void)event;
     return buddy_orchestrator_process_rx(state, &ops, slot->data, slot->length,
                                          slot->connection_generation, now_ms, action);

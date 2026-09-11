@@ -62,10 +62,12 @@
 ## 切回蓝牙
 
 ```powershell
-python tools/configure_lan.py --port COM3 --disable
+python tools/configure_lan.py --port COM3 --transport ble
+# 恢复已配置的局域网：
+python tools/configure_lan.py --port COM3 --transport lan
 ```
 
-这会清除设备上的 Wi‑Fi 信息和局域网密钥并重启，恢复蓝牙模式。未配网时也默认使用蓝牙；必要时在设备设置中开启蓝牙。恢复出厂设置同样清除局域网配置。
+这会保留 Wi-Fi 和配对密钥，仅切换模式并重启。只有使用 `--disable` 才会清除 Wi-Fi 与密钥。未配网时也默认使用蓝牙；必要时在设备设置中开启蓝牙。恢复出厂设置同样清除局域网配置。
 
 ## 实现与验证范围
 
@@ -92,4 +94,4 @@ python tools/configure_lan.py --port COM3 --disable
 
 ## English quick start
 
-Open Settings → Wi-Fi on the Passport and press OK. Join the password-protected `Passport Setup` hotspot with your phone, open `http://192.168.4.1`, save the network, download the pairing JSON and restart. Transfer the JSON to the computer and run `python tools/codex_bridge.py --lan DEVICE_IP --lan-key-file PATH_TO_JSON`. Install `tools/requirements-lan.txt` first. Alternatively use `python tools/configure_lan.py --port COM3` over USB, which stores the key in `~/.codex/passport-lan.json`. Use `--disable` over USB to forget LAN settings and return to BLE mode. Wi-Fi credentials stay on the device. This branch uses one wireless transport at a time and retains the pet, chime and idle-sleep features.
+Open Settings → Wi-Fi on the Passport and press OK. Join the password-protected `Passport Setup` hotspot with your phone, open `http://192.168.4.1`, save the network, download the pairing JSON and restart. Transfer the JSON to the computer and run `python tools/codex_bridge.py --lan DEVICE_IP --lan-key-file PATH_TO_JSON`. Install `tools/requirements-lan.txt` first. Alternatively use `python tools/configure_lan.py --port COM3` over USB, which stores the key in `~/.codex/passport-lan.json`. Use `--transport ble` or `--transport lan` over USB to switch without deleting pairing. `--disable` explicitly forgets LAN settings. Wi-Fi credentials stay on the device. This branch uses one wireless transport at a time and retains the pet, chime and idle-sleep features.

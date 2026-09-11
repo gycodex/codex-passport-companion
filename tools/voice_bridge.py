@@ -39,8 +39,6 @@ def validate_config(cfg):
         raise ValueError("虚拟音频设备无效")
     start, stop = parse_shortcut(cfg["voice_start_key"]), parse_shortcut(cfg["voice_stop_key"])
     if cfg["voice_enabled"]:
-        if cfg["mode"] != "lan":
-            raise ValueError("第一版语音输入需要局域网连接")
         if not cfg["voice_output"]:
             raise ValueError("请先选择虚拟音频设备")
         if cfg["voice_hotkeys"] and (not start or not stop):
@@ -85,7 +83,7 @@ class AudioOutput:
         self.buffered = 0
         self.dropped = 0
         self.stream = sd.RawOutputStream(device=device, samplerate=self.rate,
-            channels=self.channels, dtype="int16", blocksize=0, callback=self._callback)
+            channels=self.channels, dtype="int16", blocksize=0, latency="low", callback=self._callback)
         try:
             self.stream.start()
         except BaseException:
@@ -293,14 +291,16 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
                 gap = packet["sequence"] - expected
                 if gap < 0 or gap > 100:
                     raise ValueError("语音帧顺序异常，请重新连接")
-                # Short losses preserve timing; bounded output drops excess backlog.
-                for _ in range(gap):
-                    output.push(b'\0' * 640)
+                # The output callback already emitted silence while waiting for the
+                # network. Replaying lost frames as silence delays fresh speech twice.
+                # Each ADPCM frame carries its own decoder state, so gaps are safe.
                 output.push(pcm)
                 expected = packet["sequence"] + len(pcm) // 640
             if started and not packet["recording"] and not packet["pending"]:
                 await output.drain()
                 started = False
+                reason = {2: "网络中断超过 5 秒，设备已停止录音", 3: "已达到两分钟录音上限", 4: "设备操作或采集异常导致录音停止"}.get(packet.get("stop_reason"))
+                if reason: report("voice_event", message=reason)
                 shortcuts.send(shortcuts.stop)
                 report("voice_event", message="设备录音结束，结束快捷键已发送" if shortcuts.enabled else "设备录音结束")
             now = time.monotonic()
@@ -308,6 +308,8 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
                 report("synced", voice=dict(status="recording" if started else "ready",
                     peak=packet["peak"] if started else 0, dropped=packet["dropped"] + output.dropped,
                     poll_ms=poll_ms, device_pending_ms=packet["pending"] * 20,
+                    stop_reason=packet.get("stop_reason", 0),
+                    clipped=packet.get("clipped", 0), samples=packet.get("samples", 0),
                     output_pending_ms=round(1000 * getattr(output, "buffered", 0) /
                         (getattr(output, "rate", 16000) * getattr(output, "channels", 1) * 2), 1)))
                 last_report = now
@@ -316,6 +318,8 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
     except asyncio.CancelledError:
         raise
     except Exception as error:
+        import traceback
+        print("Voice failure:", type(error).__name__, [(frame.name, frame.lineno) for frame in traceback.extract_tb(error.__traceback__)], flush=True)
         message = str(error) if isinstance(error, ValueError) else "语音连接失败，请检查虚拟音频设备和系统权限"
         report("voice_error", message=message, voice=dict(status="error", message=message, peak=0))
     finally:

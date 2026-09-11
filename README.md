@@ -13,9 +13,9 @@ Current branch firmware version: **0.2.0-lan**.
 
 The first live Codex heartbeat after connecting or reconnecting over BLE/LAN plays a short 100 ms connection note. Routine heartbeats stay quiet. The note follows the existing sound mode and automatic quiet hours.
 
-**Microphone / speech input:** new firmware and console support physical-button LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). Bluetooth audio is not implemented.
+**Microphone / speech input:** new firmware and console support physical-button BLE or LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). BLE audio requires secure pairing and MTU ≥185; real-world quality and stability are still being evaluated.
 
-**Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. No firmware update is required for the panel. See [setup and validation notes](docs/CONSOLE.md).
+**Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. Existing panel features work without reflashing; new microphone features require the matching firmware. See [setup and validation notes](docs/CONSOLE.md).
 
 **LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 
@@ -24,6 +24,20 @@ The display backlight turns off after five idle minutes while Bluetooth stays co
 The implementation starts from this repository's `demo/claude-buddy-port` reference and
 keeps its bounded state machine, pixel UI, encrypted Nordic UART BLE transport, bonding,
 and reconnect behavior. A local bridge translates Codex data into the device protocol.
+
+## Quick start
+
+Use the **`feature/lan-connection`** branch. Flash its firmware using ESP-IDF 5.5.3, install Python 3.10+ and the Codex CLI, and sign in to Codex. On Windows, double-click `start-console.vbs` (`start-console.cmd` shows startup errors); on macOS, run `bash start-console.command`.
+
+In the local page, select Bluetooth (scan and secure pairing) or LAN (device IP and pairing JSON). Both transports support usage, task status, reminders and microphone forwarding. For voice, install a virtual audio cable and configure your input method; this is not a native Bluetooth headset.
+
+- [中文快速开始](README.zh_CN.md#快速开始)
+- [Console, transport switching and another computer](docs/CONSOLE.md)
+- [Wi-Fi provisioning](docs/LAN.md)
+- [Microphone and Doubao setup](docs/VOICE.md)
+- [Validation and release limits](docs/RELEASE_CHECKLIST.md)
+
+On the home screen: UP changes page, DOWN toggles recording, hold OK opens the menu. The top-left status identifies BLE/LAN; battery remains top-right. Doubao compatibility is experimental and restricted to a verified Windows build. Other computers and long-running audio stability remain unverified.
 
 ## Data flow and privacy
 
@@ -48,7 +62,6 @@ reconciles after connectivity returns. A never-observed snapshot is shown as una
 Use ESP-IDF 5.5.3 and target ESP32-C3:
 
 ```bash
-get_idf553
 idf.py set-target esp32c3
 idf.py build
 idf.py flash monitor
@@ -91,7 +104,6 @@ it with `Ctrl+C`.
 ## Tests
 
 ```bash
-get_idf553
 cmake -S tests -B build-host
 cmake --build build-host
 ctest --test-dir build-host --output-on-failure

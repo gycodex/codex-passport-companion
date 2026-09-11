@@ -315,7 +315,7 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
         state->info_page = (uint8_t)((state->info_page + 1U) % 6U);
         buddy_set_ui_refresh(action);
     } else if (key == BUDDY_KEY_DOWN && state->page == BUDDY_PAGE_HOME) {
-        if (state->lan_mode && !state->passkey_visible) {
+        if (!state->passkey_visible) {
             if (action != NULL) action->voice_toggle = true;
             buddy_set_ui_refresh(action);
         } else if (action != NULL) {

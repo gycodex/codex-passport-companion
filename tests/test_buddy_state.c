@@ -783,7 +783,7 @@ static void test_normal_navigation_and_approval_scroll_are_distinct(void)
     buddy_state_init(&state, NULL);
     buddy_state_reduce(&state, &down, 1000, &action);
     assert(state.page == BUDDY_PAGE_HOME);
-    assert(action.type == BUDDY_ACTION_UI_SCROLL);
+    assert(action.voice_toggle);
     buddy_state_reduce(&state, &up, 1001, &action);
     assert(state.page == BUDDY_PAGE_PET);
 
@@ -1237,7 +1237,7 @@ static void test_home_voice_gesture_and_power(void)
     state.page = BUDDY_PAGE_HOME;
     state.lan_mode = false;
     buddy_state_reduce(&state, &key, 126000, &action);
-    assert(!action.voice_toggle);
+    assert(action.voice_toggle);
 }
 
 int main(void)
