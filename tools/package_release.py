@@ -40,6 +40,8 @@ def main():
         raise ValueError("Commit the release sources before packaging")
     if args.firmware_commit != revision:
         raise ValueError("Firmware must come from CI for the current source commit")
+    if not (args.runtime_dir / "python313._pth").is_file() or (args.runtime_dir / "pyvenv.cfg").exists():
+        raise ValueError("Use the clean embedded Python runtime, not a virtual environment")
     description = json.loads((args.firmware_dir / "project_description.json").read_text())
     app = args.firmware_dir / "FoloToy-AI-Passport.bin"
     if description["project_version"] != args.version or app.read_bytes()[48:80].split(b"\0")[0].decode() != args.version:
@@ -62,7 +64,8 @@ def main():
             shutil.copy2(ROOT / name, destination)
     shutil.copytree(desktop, portable)
     # This is a freshly downloaded official embedded runtime, never a user virtualenv.
-    shutil.copytree(args.runtime_dir, portable / "runtime", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    # pip's cross-install console wrappers point to the build interpreter; use python -m instead.
+    shutil.copytree(args.runtime_dir, portable / "runtime", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "bin"))
     files = {"FoloToy-AI-Passport.bin": app,
              "bootloader.bin": args.firmware_dir / "bootloader/bootloader.bin",
              "partition-table.bin": args.firmware_dir / "partition_table/partition-table.bin"}
