@@ -9,6 +9,16 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 MAX_PAYLOAD = 2048
 PORT = 8765
+REQUEST_TIMEOUT = 5
+
+
+class LanRequestTimeout(TimeoutError):
+    """Safe transport diagnostics: timings only, never payloads or keys."""
+    def __init__(self, phase, elapsed_ms, loop_lag_ms):
+        self.phase = phase
+        self.elapsed_ms = elapsed_ms
+        self.loop_lag_ms = loop_lag_ms
+        super().__init__(f"LAN {phase} timeout; elapsed={elapsed_ms:.0f} ms; loop_lag={loop_lag_ms:.0f} ms")
 
 def handshake_digest(key: bytes, client_nonce: bytes, server_nonce: bytes, domain=b'H') -> bytes:
     if len(client_nonce) != 12 or len(server_nonce) != 12:
@@ -80,17 +90,37 @@ class LanClient:
             if not self.is_connected:
                 raise ConnectionError("LAN connection is closed")
             self.sequence += 1
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            due = started + .1
+            lag = 0.0
+            handle = None
+            def probe():
+                nonlocal due, lag, handle
+                now = loop.time()
+                lag = max(lag, now - due)
+                due = now + .1
+                handle = loop.call_at(due, probe)
+            handle = loop.call_at(due, probe)
+            phase = "write"
             try:
                 self.writer.write(seal(self.key, self.challenge, self.sequence, payload))
-                await asyncio.wait_for(self.writer.drain(), 5)
-                frame = await asyncio.wait_for(self.reader.readline(), 5)
+                await asyncio.wait_for(self.writer.drain(), REQUEST_TIMEOUT)
+                phase = "reply"
+                frame = await asyncio.wait_for(self.reader.readline(), REQUEST_TIMEOUT)
                 response = json.loads(unseal(self.key, self.challenge, self.sequence, frame, True))
                 if not isinstance(response, dict):
                     raise ValueError("Invalid LAN response")
                 return response
+            except asyncio.TimeoutError as error:
+                self.is_connected = False
+                raise LanRequestTimeout(phase, (loop.time() - started) * 1000,
+                                        max(lag, loop.time() - due) * 1000) from error
             except BaseException:
                 self.is_connected = False
                 raise
+            finally:
+                handle.cancel()
 
     async def send_payload(self, payload: bytes):
         if await self.request(payload) != {"ok": True}:

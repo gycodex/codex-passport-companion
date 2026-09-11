@@ -299,7 +299,7 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
             if started and not packet["recording"] and not packet["pending"]:
                 await output.drain()
                 started = False
-                reason = {2: "网络中断超过 5 秒，设备已停止录音", 3: "已达到两分钟录音上限", 4: "设备操作或采集异常导致录音停止"}.get(packet.get("stop_reason"))
+                reason = {2: "设备超过 5 秒未收到电脑轮询，已停止录音", 3: "已达到两分钟录音上限", 4: "设备操作或采集异常导致录音停止"}.get(packet.get("stop_reason"))
                 if reason: report("voice_event", message=reason)
                 shortcuts.send(shortcuts.stop)
                 report("voice_event", message="设备录音结束，结束快捷键已发送" if shortcuts.enabled else "设备录音结束")
@@ -321,6 +321,14 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
         import traceback
         print("Voice failure:", type(error).__name__, [(frame.name, frame.lineno) for frame in traceback.extract_tb(error.__traceback__)], flush=True)
         message = str(error) if isinstance(error, ValueError) else "语音连接失败，请检查虚拟音频设备和系统权限"
+        if isinstance(error, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
+            from lan_transport import LanRequestTimeout
+            message = "设备通信超时或断开，录音已停止，正在重新连接"
+            if isinstance(error, LanRequestTimeout):
+                print(str(error), flush=True)
+                phase = "发送请求" if error.phase == "write" else "等待设备回复"
+                message = (f"{phase}超时（{error.elapsed_ms:.0f} ms），"
+                           f"电脑事件循环最大延迟 {error.loop_lag_ms:.0f} ms；正在重新连接")
         report("voice_error", message=message, voice=dict(status="error", message=message, peak=0))
     finally:
         try:

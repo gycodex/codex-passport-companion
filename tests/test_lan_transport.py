@@ -4,9 +4,10 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"tools"))
 from cryptography.exceptions import InvalidTag
-from lan_transport import LanClient, MAX_PAYLOAD, handshake_digest, server_hello, load_key, nonce_for, seal, unseal
+from lan_transport import LanClient, LanRequestTimeout, MAX_PAYLOAD, handshake_digest, server_hello, load_key, nonce_for, seal, unseal
 
 KEY = bytes(range(32))
 CHALLENGE = bytes(range(12))
@@ -51,6 +52,27 @@ class CryptoTests(unittest.TestCase):
             with self.assertRaises(ValueError): load_key(str(path))
 
 class ClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timeout_identifies_phase_and_invalidates_connection(self):
+        async def stalled():
+            await asyncio.sleep(60)
+        for phase in ('write', 'reply'):
+            client = LanClient('127.0.0.1', KEY)
+            client.is_connected = True
+            client.challenge = CHALLENGE
+            client.writer = Mock()
+            client.writer.drain = AsyncMock(side_effect=stalled if phase == 'write' else None)
+            client.reader = Mock()
+            client.reader.readline = AsyncMock(side_effect=stalled)
+            with patch('lan_transport.REQUEST_TIMEOUT', .02):
+                with self.assertRaises(LanRequestTimeout) as caught:
+                    await client.request(b'private payload')
+            self.assertEqual(caught.exception.phase, phase)
+            self.assertGreaterEqual(caught.exception.elapsed_ms, 15)
+            self.assertNotIn('private payload', str(caught.exception))
+            self.assertFalse(client.is_connected)
+            with self.assertRaises(ConnectionError):
+                await client.request(b'{}')
+
     async def test_replayed_server_greeting_sends_no_payload(self):
         received = []
         async def device(reader, writer):
