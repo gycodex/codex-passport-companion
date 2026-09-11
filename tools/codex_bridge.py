@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from contextlib import asynccontextmanager, suppress
 import asyncio
 import json
@@ -23,6 +24,7 @@ TASK_REFRESH_SECONDS = 2.0
 USAGE_CACHE_FILE = "ai-passport-usage-cache.json"
 SESSION_PRIME_BYTES = 2 * 1024 * 1024
 SESSION_ACTIVE_LOOKBACK_SECONDS = 2 * 60 * 60
+INTERRUPTION_NOTICE_SECONDS = 6.0
 
 
 class CodexAppServer:
@@ -263,6 +265,8 @@ class SessionWatcher:
         self.active_turns: set[tuple[Path, str]] = set()
         self.active_legacy_sessions: set[Path] = set()
         self.event_sessions: set[Path] = set()
+        self.aborted_turns: deque[tuple[str, str]] = deque(maxlen=256)
+        self.interrupted_until = 0.0
         self.completion_sequence = self._load_sequence()
         recent_cutoff = time.time() - SESSION_ACTIVE_LOOKBACK_SECONDS
         for path in self._files():
@@ -274,6 +278,10 @@ class SessionWatcher:
                     self._prime(path)
             except OSError:
                 pass
+
+    @property
+    def interrupted(self) -> bool:
+        return time.monotonic() < self.interrupted_until
 
     @property
     def running_count(self) -> int:
@@ -348,7 +356,27 @@ class SessionWatcher:
         if record.get("type") == "event_msg" and isinstance(payload, dict):
             event_type = payload.get("type")
             turn_id = payload.get("turn_id")
-            if event_type in ("task_started", "task_complete") and isinstance(turn_id, str):
+            if (event_type in ("task_started", "task_complete", "turn_aborted")
+                    and isinstance(turn_id, str) and turn_id):
+                thread_id = self.thread_ids.get(path, str(path))
+                terminal_key = (thread_id, turn_id)
+                if terminal_key in self.aborted_turns:
+                    return False
+                if event_type == "turn_aborted":
+                    # Only retire the matching turn, including mirrored session files.
+                    # An old interruption must not clear a newer turn of this thread.
+                    matching = {
+                        active for active in self.active_turns
+                        if self.thread_ids.get(active[0], str(active[0])) == thread_id
+                        and active[1] == turn_id
+                    }
+                    self.aborted_turns.append(terminal_key)
+                    if not matching:
+                        return False
+                    self.active_turns.difference_update(matching)
+                    if not historical:
+                        self.interrupted_until = time.monotonic() + INTERRUPTION_NOTICE_SECONDS
+                    return True
                 before = self.running_count
                 self.event_sessions.add(path)
                 self.active_legacy_sessions.discard(path)
@@ -418,9 +446,12 @@ def heartbeat_payload(
     secondary = usage.get("secondary", {})
     if running_count is None:
         running_count = watcher.running_count
-    message = "任务已完成" if completed else (
-        "助手正在工作" if running_count else "助手已就绪"
-    )
+    if completed:
+        message = "任务已完成"
+    elif watcher.interrupted:
+        message = f"Task interrupted; {running_count} running" if running_count else "Task interrupted"
+    else:
+        message = "助手正在工作" if running_count else "助手已就绪"
     payload = {
         "total": running_count,
         "running": running_count,
@@ -529,7 +560,8 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                 file=sys.stderr,
                 flush=True,
             )
-        running_count = max(running_count, watcher.running_count)
+        server_running_count = running_count
+        running_count = max(server_running_count, watcher.running_count)
         print(f"用量数据：可用={bool(usage.get('available'))}", flush=True)
         for name in ("primary", "secondary"):
             window = usage.get(name, {})
@@ -556,7 +588,12 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                     last_heartbeat = 0.0
                     last_usage = 0.0
                     last_task_refresh = 0.0
+                    # Recover offline changes as a baseline, without replaying alerts.
+                    await asyncio.to_thread(watcher.poll)
+                    running_count = max(server_running_count, watcher.running_count)
                     previous_sequence = watcher.completion_sequence
+                    watcher.interrupted_until = 0.0
+                    previous_interrupted = False
                     # Establish the session baseline before enabling test alerts.
                     await send_payload(client, heartbeat_payload(usage, watcher, running_count))
                     report("connected", usage=usage, running=running_count, synced_at=time.time())
@@ -564,7 +601,15 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                     async with voice_session(client, control):
                         while client.is_connected and not (control is not None and getattr(control, "stop_requested", False)):
                             # File scans must not pause the LAN microphone polling task.
+                            interruption_baseline = watcher.interrupted_until
                             changed = await asyncio.to_thread(watcher.poll)
+                            new_interruption = watcher.interrupted_until > interruption_baseline
+                            interrupted = watcher.interrupted
+                            changed = changed or interrupted != previous_interrupted
+                            previous_interrupted = interrupted
+                            refreshed_count = max(server_running_count, watcher.running_count)
+                            changed = changed or refreshed_count != running_count
+                            running_count = refreshed_count
                             if control is not None and control.take_test():
                                 watcher.completion_sequence += 1
                                 watcher._save_sequence()
@@ -593,9 +638,9 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                                 changed = True
                             if now - last_task_refresh >= TASK_REFRESH_SECONDS:
                                 try:
-                                    refreshed_count = await app_server.running_task_count()
+                                    server_running_count = await app_server.running_task_count()
                                     refreshed_count = max(
-                                        refreshed_count, watcher.running_count
+                                        server_running_count, watcher.running_count
                                     )
                                     changed = changed or refreshed_count != running_count
                                     running_count = refreshed_count
@@ -608,6 +653,9 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                                     )
                                 last_task_refresh = now
                             if changed or now - last_heartbeat >= HEARTBEAT_SECONDS:
+                                # Slow account refreshes must not consume the notice before sending.
+                                if new_interruption:
+                                    watcher.interrupted_until = time.monotonic() + INTERRUPTION_NOTICE_SECONDS
                                 await send_payload(
                                     client,
                                     heartbeat_payload(usage, watcher, running_count, completed),

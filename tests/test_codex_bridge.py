@@ -1,10 +1,13 @@
 import asyncio
+from contextlib import asynccontextmanager
 import importlib.util
+import json
 import sys
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 
 MODULE_PATH = Path(__file__).parents[1] / "tools" / "codex_bridge.py"
@@ -15,6 +18,137 @@ SPEC.loader.exec_module(codex_bridge)
 
 
 class CodexBridgeTests(unittest.TestCase):
+    def test_live_interruption_updates_count_even_when_server_refresh_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            session = home / "sessions" / "run.jsonl"
+            session.parent.mkdir()
+            session.write_text("", encoding="utf-8")
+            watcher = codex_bridge.SessionWatcher(home)
+            sent = []
+
+            def append(kind):
+                with session.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps({"type": "event_msg", "payload": {
+                        "type": kind, "turn_id": "live"}}) + "\n")
+
+            async def send(payload):
+                sent.append(json.loads(payload))
+
+            @asynccontextmanager
+            async def transport(args):
+                append("task_started")
+                yield SimpleNamespace(is_connected=True, send_payload=send)
+
+            @asynccontextmanager
+            async def voice(client, control):
+                append("turn_aborted")
+                yield
+
+            sleeps = 0
+            async def sleep(seconds):
+                nonlocal sleeps
+                sleeps += 1
+                watcher.interrupted_until = 0
+                if sleeps >= 2:
+                    control.stop_requested = True
+
+            control = SimpleNamespace(stop_requested=False, take_test=lambda: False,
+                                      report=lambda *args, **kwargs: None)
+
+            async def rate_limits():
+                if watcher.interrupted:
+                    # Model an account refresh taking longer than the notice duration.
+                    watcher.interrupted_until = codex_bridge.time.monotonic() - 1
+                return {}
+
+            server = SimpleNamespace(start=AsyncMock(), close=AsyncMock(),
+                                     rate_limits=rate_limits,
+                                     running_task_count=AsyncMock(side_effect=[0, RuntimeError("offline")]))
+            with patch.dict(codex_bridge.os.environ, {"CODEX_HOME": directory}), \
+                 patch.dict(sys.modules, {"voice_bridge": SimpleNamespace(voice_session=voice)}), \
+                 patch.object(codex_bridge, "SessionWatcher", return_value=watcher), \
+                 patch.object(codex_bridge, "CodexAppServer", return_value=server), \
+                 patch.object(codex_bridge, "open_transport", transport), \
+                 patch.object(codex_bridge.asyncio, "sleep", sleep):
+                asyncio.run(codex_bridge.bridge_loop(SimpleNamespace(codex="unused", dry_run=False), control))
+            heartbeats = [payload for payload in sent if "running" in payload]
+            self.assertEqual([payload["running"] for payload in heartbeats], [1, 0, 0])
+            self.assertEqual([payload["msg"] for payload in heartbeats],
+                             ["助手正在工作", "Task interrupted", "助手已就绪"])
+            self.assertTrue(all(payload["codex"]["completion_seq"] == 0 for payload in heartbeats))
+            server.close.assert_awaited_once()
+
+    def test_interruption_is_scoped_deduplicated_and_never_completed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            watcher = codex_bridge.SessionWatcher(Path(directory))
+            first, mirror, second = (Path(name) for name in ("first", "mirror", "second"))
+            watcher.thread_ids.update({first: "a", mirror: "a", second: "b"})
+
+            def event(path, kind, turn):
+                return watcher._consume(path, json.dumps({"type": "event_msg", "payload": {
+                    "type": kind, "turn_id": turn}}))
+
+            event(first, "task_started", "old")
+            event(mirror, "task_started", "old")
+            event(first, "task_started", "new")
+            event(second, "task_started", "other")
+            with patch.object(codex_bridge.time, "monotonic", return_value=100):
+                self.assertTrue(event(first, "turn_aborted", "old"))
+                self.assertEqual(watcher.running_count, 2)
+                self.assertEqual(watcher.active_turns, {(first, "new"), (second, "other")})
+                self.assertFalse(event(mirror, "turn_aborted", "old"))
+                self.assertFalse(event(first, "task_complete", "old"))
+                self.assertEqual(watcher.completion_sequence, 0)
+                payload = json.loads(codex_bridge.heartbeat_payload({}, watcher))
+                self.assertEqual(payload["msg"], "Task interrupted; 2 running")
+                self.assertEqual(payload["running"], 2)
+                self.assertEqual(payload["waiting"], 0)
+                self.assertEqual(payload["codex"]["completion_seq"], 0)
+                # Another task's successful completion retains its normal alert.
+                event(second, "task_complete", "other")
+                self.assertEqual(watcher.completion_sequence, 1)
+                self.assertEqual(json.loads(codex_bridge.heartbeat_payload(
+                    {}, watcher, completed=True))["msg"], "任务已完成")
+            with patch.object(codex_bridge.time, "monotonic", return_value=106):
+                self.assertFalse(watcher.interrupted)
+                self.assertEqual(json.loads(codex_bridge.heartbeat_payload({}, watcher))["msg"],
+                                 "助手正在工作")
+
+    def test_interruption_recovery_and_live_poll(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            session = home / "sessions" / "run.jsonl"
+            session.parent.mkdir()
+
+            def append(kind, turn):
+                with session.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps({"type": "event_msg", "payload": {
+                        "type": kind, "turn_id": turn}}) + "\n")
+
+            append("task_started", "old")
+            append("turn_aborted", "old")
+            watcher = codex_bridge.SessionWatcher(home)
+            self.assertFalse(watcher.running)
+            self.assertFalse(watcher.interrupted)
+            self.assertEqual(watcher.completion_sequence, 0)
+            for turn in (None, "", 42, "unknown"):
+                append("turn_aborted", turn)
+            self.assertFalse(watcher.poll())
+            self.assertFalse(watcher.interrupted)
+            append("task_started", "live")
+            self.assertTrue(watcher.poll())
+            append("turn_aborted", "live")
+            self.assertTrue(watcher.poll())
+            self.assertFalse(watcher.running)
+            self.assertTrue(watcher.interrupted)
+            self.assertEqual(json.loads(codex_bridge.heartbeat_payload({}, watcher))["msg"],
+                             "Task interrupted")
+            self.assertFalse(watcher.state_path.exists())
+            restarted = codex_bridge.SessionWatcher(home)
+            self.assertFalse(restarted.running)
+            self.assertFalse(restarted.interrupted)
+
     def test_app_server_reads_large_jsonl_response(self) -> None:
         script = (
             "import json, sys\n"

@@ -11,6 +11,15 @@ Window labels follow the reported duration; absent windows are hidden instead of
 
 Current branch firmware version: **0.2.0-lan**.
 
+The computer bridge recognizes `turn_aborted` session events: it retires only the matching
+turn and briefly displays **Task interrupted** on the home page for about six seconds.
+Interruption does not increment the completion counter or trigger a completion celebration
+or chime. Other tasks keep running; a completion in the same batch takes display priority.
+Startup and reconnect establish a baseline without replaying old interruption alerts.
+Restart the updated bridge to use this feature; no firmware reflash is needed because it
+uses the existing status caption. Waiting for input, approvals, and failed turns are not
+integrated yet; a failed tool call does not imply a failed task.
+
 The first live Codex heartbeat after connecting or reconnecting over BLE/LAN plays a short 100 ms connection note. Routine heartbeats stay quiet. The note follows the existing sound mode and automatic quiet hours.
 
 **Microphone / speech input:** new firmware and console support physical-button BLE or LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). BLE audio requires secure pairing and MTU ≥185; real-world quality and stability are still being evaluated.
