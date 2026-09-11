@@ -113,13 +113,17 @@ static void test_codex_completion_sequence_celebrates_once(void)
 
     buddy_state_init(&state, &settings);
     buddy_state_reduce(&state, &heartbeat, 1000, &action);
+    assert(action.type == BUDDY_ACTION_UI_REFRESH);
+    assert(state.character != BUDDY_CHARACTER_CELEBRATE);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 6;
+    buddy_state_reduce(&state, &heartbeat, 1001, &action);
     assert(action.type == BUDDY_ACTION_SETTINGS);
     assert(state.character == BUDDY_CHARACTER_CELEBRATE);
     assert(state.codex_usage.primary_used_percent == 20);
 
-    buddy_state_reduce(&state, &heartbeat, 1001, &action);
+    buddy_state_reduce(&state, &heartbeat, 1002, &action);
     assert(action.type == BUDDY_ACTION_UI_REFRESH);
-    assert(state.highest_celebrated_level == 5);
+    assert(state.highest_celebrated_level == 6);
 }
 
 static void test_character_priority(void)
@@ -779,7 +783,7 @@ static void test_normal_navigation_and_approval_scroll_are_distinct(void)
     buddy_state_init(&state, NULL);
     buddy_state_reduce(&state, &down, 1000, &action);
     assert(state.page == BUDDY_PAGE_HOME);
-    assert(action.type == BUDDY_ACTION_UI_SCROLL);
+    assert(action.voice_toggle);
     buddy_state_reduce(&state, &up, 1001, &action);
     assert(state.page == BUDDY_PAGE_PET);
 
@@ -830,20 +834,53 @@ static void test_settings_actions_have_separate_confirmations(void)
     assert(action.type == BUDDY_ACTION_FACTORY_RESET_CONFIRMED);
 }
 
-static void test_original_settings_surface_is_complete_and_bounded(void)
+static void test_supported_settings_navigation_is_bounded(void)
 {
     buddy_state_t state;
     buddy_action_t action = {0};
     buddy_event_t ok = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
+    buddy_event_t down = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_DOWN};
+    buddy_event_t up = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_UP};
 
-    assert(BUDDY_SETTINGS_COUNT == 11);
-    assert(BUDDY_RESET_COUNT == 4);
+    assert(BUDDY_SETTINGS_COUNT == 9);
+    assert(BUDDY_RESET_COUNT == 3);
     buddy_state_init(&state, NULL);
     state.page = BUDDY_PAGE_SETTINGS;
     state.settings_selection = BUDDY_SETTINGS_BRIGHTNESS;
     buddy_state_reduce(&state, &ok, 1, &action);
     assert(action.type == BUDDY_ACTION_DISPLAY_BACKLIGHT);
     assert(action.brightness_percent <= 100);
+
+    /* Both directions wrap through supported settings without placeholder rows. */
+    buddy_state_reduce(&state, &up, 2, &action);
+    assert(state.settings_selection == BUDDY_SETTINGS_BACK);
+    buddy_state_reduce(&state, &down, 3, &action);
+    assert(state.settings_selection == BUDDY_SETTINGS_BRIGHTNESS);
+    state.settings_selection = BUDDY_SETTINGS_NETWORK;
+    buddy_state_reduce(&state, &down, 4, &action);
+    assert(state.settings_selection == BUDDY_SETTINGS_ASCII_PET);
+    uint8_t previous_species = state.species;
+    buddy_state_reduce(&state, &ok, 5, &action);
+    assert(state.species == (previous_species + 1U) % 18U);
+    buddy_state_reduce(&state, &down, 6, &action);
+    assert(state.settings_selection == BUDDY_SETTINGS_RESET);
+    buddy_state_reduce(&state, &ok, 7, &action);
+    assert(state.reset_open);
+    assert(state.reset_selection == BUDDY_RESET_FACTORY_RESET);
+    assert(!state.confirmation_pending);
+    assert(action.type == BUDDY_ACTION_UI_REFRESH);
+    buddy_state_reduce(&state, &down, 8, &action);
+    assert(state.reset_selection == BUDDY_RESET_UNPAIR);
+    buddy_state_reduce(&state, &down, 9, &action);
+    assert(state.reset_selection == BUDDY_RESET_BACK);
+    buddy_state_reduce(&state, &down, 10, &action);
+    assert(state.reset_selection == BUDDY_RESET_FACTORY_RESET);
+    buddy_state_reduce(&state, &up, 11, &action);
+    assert(state.reset_selection == BUDDY_RESET_BACK);
+    buddy_state_reduce(&state, &ok, 12, &action);
+    assert(!state.reset_open);
+    assert(state.page == BUDDY_PAGE_SETTINGS);
+    assert(!state.confirmation_pending);
 }
 
 static void test_remote_unpair_confirmation_remembers_ack(void)
@@ -968,6 +1005,36 @@ static void test_new_link_generation_invalidates_sensitive_state_when_disconnect
     assert(!state.confirmation_pending);
 }
 
+static void test_connection_chime_once_per_live_session(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_settings_snapshot_t settings = {0};
+    buddy_event_t heartbeat = {.type = BUDDY_EVENT_HEARTBEAT};
+    heartbeat.heartbeat.connected = true;
+    heartbeat.heartbeat.codex_usage.present = true;
+    buddy_state_init(&state, &settings);
+    buddy_state_reduce(&state, &heartbeat, 100, &action);
+    assert(action.play_connection_sound && !action.play_completion_sound);
+    buddy_state_reduce(&state, &heartbeat, 200, &action);
+    assert(!action.play_connection_sound);
+    buddy_event_t lost = {.type = BUDDY_EVENT_LAN_DISCONNECTED};
+    buddy_state_reduce(&state, &lost, 300, &action);
+    assert(!action.play_connection_sound);
+    buddy_state_reduce(&state, &heartbeat, 400, &action);
+    assert(action.play_connection_sound);
+    lost.type = BUDDY_EVENT_BLE_DISCONNECTED;
+    buddy_state_reduce(&state, &lost, 500, &action);
+    buddy_state_reduce(&state, &heartbeat, 600, &action);
+    assert(action.play_connection_sound);
+    state.heartbeat_stale = true;
+    buddy_state_reduce(&state, &heartbeat, 700, &action);
+    assert(action.play_connection_sound);
+    heartbeat.heartbeat.connected = false;
+    buddy_state_reduce(&state, &heartbeat, 800, &action);
+    assert(!action.play_connection_sound);
+}
+
 static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
 {
     buddy_state_t state;
@@ -995,6 +1062,51 @@ static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
     buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
     buddy_state_reduce(&state, &key, 600, &action);
     assert(action.type == BUDDY_ACTION_SETTINGS && action.settings.sound_mode == BUDDY_SOUND_OFF);
+}
+
+static void test_work_dimming_uses_sleep_timer(void)
+{
+    const uint64_t delays[] = {60000, 300000, 600000};
+    for (unsigned mode = 0; mode < 3; ++mode) {
+        buddy_state_t state;
+        buddy_action_t action;
+        buddy_settings_snapshot_t settings = {.sleep_mode = mode};
+        buddy_event_t hb = {.type = BUDDY_EVENT_HEARTBEAT};
+        hb.heartbeat.connected = true;
+        hb.heartbeat.running = 1;
+        hb.heartbeat.codex_usage.present = true;
+        buddy_state_init(&state, &settings);
+        buddy_state_reduce(&state, &hb, 100, &action);
+        for (uint64_t t = 101; t < 100 + delays[mode]; t += 1000)
+            buddy_state_reduce(&state, &hb, t, &action);
+        buddy_state_reduce(&state, &hb, 100 + delays[mode] - 1, &action);
+        assert(!state.screen_dimmed && !state.screen_off);
+        buddy_state_reduce(&state, &hb, 100 + delays[mode], &action);
+        assert(state.screen_dimmed && !state.screen_off && state.brightness_level == 4);
+        buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_UP};
+        buddy_page_t page = state.page;
+        buddy_state_reduce(&state, &key, 101 + delays[mode], &action);
+        assert(!state.screen_dimmed && state.page == page);
+        for (uint64_t t = 102 + delays[mode]; t < 101 + 2 * delays[mode]; t += 1000)
+            buddy_state_reduce(&state, &hb, t, &action);
+        buddy_state_reduce(&state, &hb, 101 + 2 * delays[mode], &action);
+        assert(state.screen_dimmed);
+        hb.heartbeat.codex_usage.completion_sequence++;
+        buddy_state_reduce(&state, &hb, 102 + 2 * delays[mode], &action);
+        assert(!state.screen_dimmed && action.play_completion_sound);
+        hb.heartbeat.running = 0;
+        buddy_state_reduce(&state, &hb, 103 + 2 * delays[mode], &action);
+        assert(!state.screen_dimmed && !state.screen_off);
+        buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
+        buddy_state_reduce(&state, &tick, 103 + 3 * delays[mode], &action);
+        assert(state.screen_off);
+        settings.sleep_mode = BUDDY_SLEEP_NEVER;
+        buddy_state_init(&state, &settings);
+        hb.heartbeat.running = 1;
+        buddy_state_reduce(&state, &hb, 1, &action);
+        buddy_state_reduce(&state, &hb, 9999999, &action);
+        assert(!state.screen_dimmed && !state.screen_off);
+    }
 }
 
 static void test_idle_sleep_and_wake(void)
@@ -1065,10 +1177,122 @@ static void test_idle_sleep_and_wake(void)
     assert(action.type == BUDDY_ACTION_SETTINGS);
 }
 
+static void test_wifi_setup_requires_explicit_local_click(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_state_init(&state, NULL);
+    state.page = BUDDY_PAGE_SETTINGS;
+    state.settings_selection = BUDDY_SETTINGS_WIFI;
+    buddy_event_t click = {.type=BUDDY_EVENT_KEY_CLICK, .key=BUDDY_KEY_OK};
+    buddy_state_reduce(&state, &click, 1000, &action);
+    assert(state.page == BUDDY_PAGE_SETTINGS);
+    assert(action.type == BUDDY_ACTION_LAN_ENABLE);
+    state.lan_mode = true;
+    buddy_state_reduce(&state, &click, 1050, &action);
+    assert(action.type == BUDDY_ACTION_BLE_TOGGLE && action.ble_enabled);
+    state.settings_selection = BUDDY_SETTINGS_BLE;
+    state.settings.ble_enabled = false;
+    buddy_state_reduce(&state, &click, 1075, &action);
+    assert(action.type == BUDDY_ACTION_BLE_TOGGLE && action.ble_enabled);
+    state.settings_selection = BUDDY_SETTINGS_NETWORK;
+    buddy_state_reduce(&state, &click, 1090, &action);
+    assert(state.page == BUDDY_PAGE_INFO && state.info_page == 4);
+    assert(action.type != BUDDY_ACTION_LAN_SETUP);
+    buddy_state_reduce(&state, &click, 1100, &action);
+    assert(action.type == BUDDY_ACTION_LAN_SETUP);
+    state.lan_setup = true;
+    state.settings.sleep_mode = BUDDY_SLEEP_1_MIN;
+    buddy_event_t tick = {.type=BUDDY_EVENT_TICK};
+    buddy_state_reduce(&state, &tick, 120000, &action);
+    assert(!state.screen_off);
+    buddy_state_reduce(&state, &click, 120001, &action);
+    assert(action.type == BUDDY_ACTION_LAN_SETUP);
+}
+
+static void test_switching_computers_rebases_completion_counter(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_settings_snapshot_t settings = {.highest_celebrated_level=500};
+    buddy_event_t heartbeat = {.type=BUDDY_EVENT_HEARTBEAT};
+    heartbeat.heartbeat.connected = true;
+    heartbeat.heartbeat.codex_usage.present = true;
+    heartbeat.heartbeat.codex_usage.completion_sequence = 2;
+    buddy_state_init(&state, &settings);
+    buddy_state_reduce(&state, &heartbeat, 100, &action);
+    assert(!action.play_completion_sound && state.highest_celebrated_level == 2);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 3;
+    buddy_state_reduce(&state, &heartbeat, 200, &action);
+    assert(action.play_completion_sound && state.character == BUDDY_CHARACTER_CELEBRATE);
+    buddy_state_reduce(&state, &heartbeat, 300, &action);
+    assert(!action.play_completion_sound);
+    buddy_event_t disconnected = {.type=BUDDY_EVENT_LAN_DISCONNECTED};
+    buddy_state_reduce(&state, &disconnected, 400, &action);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 900;
+    buddy_state_reduce(&state, &heartbeat, 500, &action);
+    assert(!action.play_completion_sound && state.character != BUDDY_CHARACTER_CELEBRATE);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 901;
+    buddy_state_reduce(&state, &heartbeat, 600, &action);
+    assert(action.play_completion_sound);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 0;
+    buddy_state_reduce(&state, &heartbeat, 700, &action);
+    assert(!action.play_completion_sound && state.highest_celebrated_level == 0);
+    heartbeat.heartbeat.codex_usage.completion_sequence = 1;
+    buddy_state_reduce(&state, &heartbeat, 800, &action);
+    assert(action.play_completion_sound);
+}
+
+static void test_home_voice_gesture_and_power(void)
+{
+    buddy_state_t state;
+    buddy_action_t action;
+    buddy_state_init(&state, NULL);
+    state.lan_mode = true;
+    buddy_event_t key = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_DOWN};
+    state.screen_off = true;
+    buddy_state_reduce(&state, &key, 1000, &action);
+    assert(!state.screen_off && !action.voice_toggle && state.page == BUDDY_PAGE_HOME);
+    buddy_state_reduce(&state, &key, 2000, &action);
+    assert(action.voice_toggle && state.page == BUDDY_PAGE_HOME);
+    state.voice_recording = true;
+    state.settings.sleep_mode = BUDDY_SLEEP_1_MIN;
+    buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
+    buddy_state_reduce(&state, &tick, 120000, &action);
+    assert(!state.screen_off && !state.screen_dimmed);
+    buddy_state_reduce(&state, &key, 121000, &action);
+    assert(action.voice_toggle && state.page == BUDDY_PAGE_HOME);
+    state.voice_recording = false;
+    key.type = BUDDY_EVENT_KEY_LONG;
+    buddy_state_reduce(&state, &key, 122000, &action);
+    assert(!action.voice_toggle && state.page == BUDDY_PAGE_HOME);
+    key.type = BUDDY_EVENT_KEY_CLICK;
+    state.menu_open = true;
+    buddy_state_reduce(&state, &key, 123000, &action);
+    assert(!action.voice_toggle);
+    state.menu_open = false;
+    state.passkey_visible = true;
+    buddy_state_reduce(&state, &key, 124000, &action);
+    assert(!action.voice_toggle);
+    state.passkey_visible = false;
+    state.page = BUDDY_PAGE_PET;
+    buddy_state_reduce(&state, &key, 125000, &action);
+    assert(!action.voice_toggle);
+    state.page = BUDDY_PAGE_HOME;
+    state.lan_mode = false;
+    buddy_state_reduce(&state, &key, 126000, &action);
+    assert(action.voice_toggle);
+}
+
 int main(void)
 {
+    test_connection_chime_once_per_live_session();
+    test_work_dimming_uses_sleep_timer();
+    test_switching_computers_rebases_completion_counter();
+    test_wifi_setup_requires_explicit_local_click();
     test_idle_sleep_and_wake();
     test_completion_sound_is_an_edge_not_a_replayed_snapshot();
+    test_home_voice_gesture_and_power();
     test_offline_initialization();
     test_heartbeat_mapping();
     test_codex_completion_sequence_celebrates_once();
@@ -1103,7 +1327,7 @@ int main(void)
     test_parsed_heartbeat_approval_serializes_permission();
     test_normal_navigation_and_approval_scroll_are_distinct();
     test_settings_actions_have_separate_confirmations();
-    test_original_settings_surface_is_complete_and_bounded();
+    test_supported_settings_navigation_is_bounded();
     test_remote_unpair_confirmation_remembers_ack();
     test_remote_unpair_cannot_replace_a_local_confirmation();
     test_ble_security_events_update_owned_state_and_clear_sensitive_prompt();

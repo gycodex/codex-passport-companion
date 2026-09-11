@@ -49,7 +49,6 @@ typedef enum {
     BUDDY_MENU_TURN_OFF,
     BUDDY_MENU_HELP,
     BUDDY_MENU_ABOUT,
-    BUDDY_MENU_DEMO,
     BUDDY_MENU_CLOSE,
     BUDDY_MENU_COUNT,
 } buddy_menu_item_t;
@@ -66,9 +65,7 @@ typedef enum {
     BUDDY_SETTINGS_SLEEP,
     BUDDY_SETTINGS_BLE,
     BUDDY_SETTINGS_WIFI,
-    BUDDY_SETTINGS_LED,
-    BUDDY_SETTINGS_TRANSCRIPT,
-    BUDDY_SETTINGS_CLOCK_ROTATION,
+    BUDDY_SETTINGS_NETWORK,
     BUDDY_SETTINGS_ASCII_PET,
     BUDDY_SETTINGS_RESET,
     BUDDY_SETTINGS_BACK,
@@ -76,7 +73,6 @@ typedef enum {
 } buddy_settings_item_t;
 
 typedef enum {
-    BUDDY_RESET_DELETE_CHARACTER,
     BUDDY_RESET_FACTORY_RESET,
     BUDDY_RESET_UNPAIR,
     BUDDY_RESET_BACK,
@@ -110,6 +106,7 @@ typedef enum {
     BUDDY_EVENT_KEY_CLICK,
     BUDDY_EVENT_KEY_LONG,
     BUDDY_EVENT_TICK,
+    BUDDY_EVENT_LAN_DISCONNECTED,
 } buddy_event_type_t;
 
 typedef enum {
@@ -124,6 +121,8 @@ typedef enum {
     BUDDY_ACTION_UI_SCROLL,
     BUDDY_ACTION_DISPLAY_BACKLIGHT,
     BUDDY_ACTION_SCREEN_OFF,
+    BUDDY_ACTION_LAN_SETUP,
+    BUDDY_ACTION_LAN_ENABLE,
 } buddy_action_type_t;
 
 typedef enum {
@@ -260,6 +259,8 @@ typedef struct {
     bool ble_enabled;
     bool confirmation_acknowledge;
     bool play_completion_sound;
+    bool play_connection_sound;
+    bool voice_toggle;
 } buddy_action_t;
 
 typedef struct {
@@ -293,8 +294,9 @@ typedef struct {
     uint8_t info_page;
     bool menu_open;
     bool reset_open;
-    bool transcript_enabled;
     bool screen_off;
+    bool voice_ready, voice_recording;
+    unsigned voice_seconds, voice_peak;
     uint8_t brightness_level;
     uint8_t sound_mode;
     uint8_t sleep_mode;
@@ -302,6 +304,11 @@ typedef struct {
     bool approval_locked;
     buddy_permission_delivery_t permission_delivery;
     bool ble_connected;
+    bool lan_mode;
+    bool lan_setup;
+    char lan_setup_password[13];
+    bool lan_connected;
+    char lan_ip[16];
     bool ble_encrypted;
     bool ble_enabled;
     bool battery_available;

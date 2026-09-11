@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
+from contextlib import asynccontextmanager, suppress
 import asyncio
 import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import time
 from typing import Any
 
@@ -21,6 +24,7 @@ TASK_REFRESH_SECONDS = 2.0
 USAGE_CACHE_FILE = "ai-passport-usage-cache.json"
 SESSION_PRIME_BYTES = 2 * 1024 * 1024
 SESSION_ACTIVE_LOOKBACK_SECONDS = 2 * 60 * 60
+INTERRUPTION_NOTICE_SECONDS = 6.0
 
 
 class CodexAppServer:
@@ -40,6 +44,9 @@ class CodexAppServer:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            # Task-list responses can exceed asyncio's default 64 KiB line limit.
+            limit=4 * 1024 * 1024,
+            **({"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}),
         )
         self.reader_task = asyncio.create_task(self._read_stdout())
         await self.request(
@@ -56,16 +63,29 @@ class CodexAppServer:
         await self.notify("initialized")
 
     async def close(self) -> None:
-        if self.process is not None:
-            if self.process.stdin is not None:
-                self.process.stdin.close()
-            try:
-                await asyncio.wait_for(self.process.wait(), timeout=2.0)
-            except asyncio.TimeoutError:
-                self.process.terminate()
-                await self.process.wait()
-        if self.reader_task is not None:
-            await self.reader_task
+        try:
+            if self.process is not None:
+                if self.process.stdin is not None:
+                    self.process.stdin.close()
+                # This is the bridge-owned helper, not the user's Codex app.
+                # Closing stdin alone need not make app-server exit.
+                if self.process.returncode is None:
+                    with suppress(ProcessLookupError):
+                        self.process.terminate()
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    with suppress(ProcessLookupError):
+                        self.process.kill()
+                    await asyncio.wait_for(self.process.wait(), timeout=2.0)
+        finally:
+            if self.reader_task is not None:
+                self.reader_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self.reader_task
+            for future in self.pending.values():
+                if not future.done():
+                    future.cancel()
 
     async def request(self, method: str, params: Any = None) -> dict[str, Any]:
         request_id = self.next_id
@@ -245,6 +265,8 @@ class SessionWatcher:
         self.active_turns: set[tuple[Path, str]] = set()
         self.active_legacy_sessions: set[Path] = set()
         self.event_sessions: set[Path] = set()
+        self.aborted_turns: deque[tuple[str, str]] = deque(maxlen=256)
+        self.interrupted_until = 0.0
         self.completion_sequence = self._load_sequence()
         recent_cutoff = time.time() - SESSION_ACTIVE_LOOKBACK_SECONDS
         for path in self._files():
@@ -256,6 +278,10 @@ class SessionWatcher:
                     self._prime(path)
             except OSError:
                 pass
+
+    @property
+    def interrupted(self) -> bool:
+        return time.monotonic() < self.interrupted_until
 
     @property
     def running_count(self) -> int:
@@ -330,7 +356,27 @@ class SessionWatcher:
         if record.get("type") == "event_msg" and isinstance(payload, dict):
             event_type = payload.get("type")
             turn_id = payload.get("turn_id")
-            if event_type in ("task_started", "task_complete") and isinstance(turn_id, str):
+            if (event_type in ("task_started", "task_complete", "turn_aborted")
+                    and isinstance(turn_id, str) and turn_id):
+                thread_id = self.thread_ids.get(path, str(path))
+                terminal_key = (thread_id, turn_id)
+                if terminal_key in self.aborted_turns:
+                    return False
+                if event_type == "turn_aborted":
+                    # Only retire the matching turn, including mirrored session files.
+                    # An old interruption must not clear a newer turn of this thread.
+                    matching = {
+                        active for active in self.active_turns
+                        if self.thread_ids.get(active[0], str(active[0])) == thread_id
+                        and active[1] == turn_id
+                    }
+                    self.aborted_turns.append(terminal_key)
+                    if not matching:
+                        return False
+                    self.active_turns.difference_update(matching)
+                    if not historical:
+                        self.interrupted_until = time.monotonic() + INTERRUPTION_NOTICE_SECONDS
+                    return True
                 before = self.running_count
                 self.event_sessions.add(path)
                 self.active_legacy_sessions.discard(path)
@@ -400,9 +446,12 @@ def heartbeat_payload(
     secondary = usage.get("secondary", {})
     if running_count is None:
         running_count = watcher.running_count
-    message = "任务已完成" if completed else (
-        "助手正在工作" if running_count else "助手已就绪"
-    )
+    if completed:
+        message = "任务已完成"
+    elif watcher.interrupted:
+        message = f"Task interrupted; {running_count} running" if running_count else "Task interrupted"
+    else:
+        message = "助手正在工作" if running_count else "助手已就绪"
     payload = {
         "total": running_count,
         "running": running_count,
@@ -427,6 +476,10 @@ def heartbeat_payload(
 
 
 async def send_payload(client: Any, payload: bytes) -> None:
+    if hasattr(client, "send_payload"):
+        # BLE strips its line delimiter before parsing; LAN has its own frame.
+        await client.send_payload(payload.removesuffix(b"\n").removesuffix(b"\r"))
+        return
     characteristic = client.services.get_characteristic(NUS_RX_UUID)
     if characteristic is None:
         raise RuntimeError("Codex Buddy RX characteristic is missing")
@@ -450,13 +503,45 @@ async def find_device(device_name: str | None) -> Any:
     raise RuntimeError("No Codex-* AI Passport found")
 
 
-async def bridge_loop(args: argparse.Namespace) -> None:
+@asynccontextmanager
+async def open_transport(args):
+    if args.lan:
+        from lan_transport import LanClient, load_key
+        print(f"Connecting to LAN device {args.lan}:{args.lan_port}…", flush=True)
+        async with LanClient(args.lan, load_key(args.lan_key_file), args.lan_port) as client:
+            yield client
+    else:
+        from bleak import BleakClient
+        device = await find_device(args.device)
+        print(f"Connecting to {device.name or device.address}…", flush=True)
+        options = {"winrt": {"use_cached_services": True}} if sys.platform == "win32" else {}
+        async with BleakClient(device, pair=True, timeout=60.0, **options) as client:
+            from ble_transport import BleVoiceClient
+            transport = BleVoiceClient(client)
+            await client.start_notify(NUS_TX_UUID, transport.receive)
+            try:
+                yield transport
+            finally:
+                await transport.close()
+
+
+async def bridge_loop(args: argparse.Namespace, control=None) -> None:
+    # Redirected Windows streams may otherwise use a legacy code page.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+    def report(kind, **data):
+        if control is not None:
+            control.report(kind, **data)
+
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     usage_cache_path = codex_home / USAGE_CACHE_FILE
     watcher = SessionWatcher(codex_home)
     app_server = CodexAppServer(args.codex)
-    await app_server.start()
     try:
+        report("starting")
+        await app_server.start()
         usage = load_cached_usage(usage_cache_path)
         running_count = 0
         try:
@@ -480,7 +565,8 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                 file=sys.stderr,
                 flush=True,
             )
-        running_count = max(running_count, watcher.running_count)
+        server_running_count = running_count
+        running_count = max(server_running_count, watcher.running_count)
         print(f"用量数据：可用={bool(usage.get('available'))}", flush=True)
         for name in ("primary", "secondary"):
             window = usage.get(name, {})
@@ -491,17 +577,10 @@ async def bridge_loop(args: argparse.Namespace) -> None:
         if args.dry_run:
             print(heartbeat_payload(usage, watcher, running_count).decode().rstrip())
             return
-        from bleak import BleakClient
-
-        while True:
+        while not (control is not None and getattr(control, "stop_requested", False)):
             try:
-                device = await find_device(args.device)
-                print(f"Connecting to {device.name or device.address}…", flush=True)
-                # The fixed NUS service layout can use Windows' GATT cache.
-                # Re-enumerating it on rapid reconnects can cancel WinRT requests.
-                options = {"winrt": {"use_cached_services": True}} if sys.platform == "win32" else {}
-                async with BleakClient(device, pair=True, timeout=60.0, **options) as client:
-                    await client.start_notify(NUS_TX_UUID, lambda _sender, _data: None)
+                report("connecting")
+                async with open_transport(args) as client:
                     print("Connected. Codex usage and completion alerts are live.", flush=True)
                     timezone_offset = int(
                         time.mktime(time.localtime()) - time.mktime(time.gmtime())
@@ -514,53 +593,87 @@ async def bridge_loop(args: argparse.Namespace) -> None:
                     last_heartbeat = 0.0
                     last_usage = 0.0
                     last_task_refresh = 0.0
+                    # Recover offline changes as a baseline, without replaying alerts.
+                    await asyncio.to_thread(watcher.poll)
+                    running_count = max(server_running_count, watcher.running_count)
                     previous_sequence = watcher.completion_sequence
-                    while client.is_connected:
-                        changed = watcher.poll()
-                        completed = watcher.completion_sequence > previous_sequence
-                        previous_sequence = watcher.completion_sequence
-                        now = time.monotonic()
-                        if roll_expired_usage_windows(usage):
-                            save_cached_usage(usage_cache_path, usage)
-                            changed = True
-                        if now - last_usage >= USAGE_REFRESH_SECONDS:
-                            try:
-                                refreshed_usage = await app_server.rate_limits()
-                                if refreshed_usage.get("available"):
-                                    usage = refreshed_usage
-                                    roll_expired_usage_windows(usage)
-                                    save_cached_usage(usage_cache_path, usage)
-                            except Exception as error:
-                                print(
-                                    f"Codex usage refresh failed: {error}. Will retry…",
-                                    file=sys.stderr,
-                                    flush=True,
+                    watcher.interrupted_until = 0.0
+                    previous_interrupted = False
+                    # Establish the session baseline before enabling test alerts.
+                    await send_payload(client, heartbeat_payload(usage, watcher, running_count))
+                    report("connected", usage=usage, running=running_count, synced_at=time.time())
+                    from voice_bridge import voice_session
+                    async with voice_session(client, control):
+                        while client.is_connected and not (control is not None and getattr(control, "stop_requested", False)):
+                            # File scans must not pause the LAN microphone polling task.
+                            interruption_baseline = watcher.interrupted_until
+                            changed = await asyncio.to_thread(watcher.poll)
+                            new_interruption = watcher.interrupted_until > interruption_baseline
+                            interrupted = watcher.interrupted
+                            changed = changed or interrupted != previous_interrupted
+                            previous_interrupted = interrupted
+                            refreshed_count = max(server_running_count, watcher.running_count)
+                            changed = changed or refreshed_count != running_count
+                            running_count = refreshed_count
+                            if control is not None and control.take_test():
+                                watcher.completion_sequence += 1
+                                watcher._save_sequence()
+                                changed = True
+                            completed = watcher.completion_sequence > previous_sequence
+                            previous_sequence = watcher.completion_sequence
+                            now = time.monotonic()
+                            if roll_expired_usage_windows(usage):
+                                save_cached_usage(usage_cache_path, usage)
+                                changed = True
+                            if now - last_usage >= USAGE_REFRESH_SECONDS:
+                                try:
+                                    refreshed_usage = await app_server.rate_limits()
+                                    if refreshed_usage.get("available"):
+                                        usage = refreshed_usage
+                                        roll_expired_usage_windows(usage)
+                                        save_cached_usage(usage_cache_path, usage)
+                                except Exception as error:
+                                    report("warning", message=f"Usage refresh failed: {type(error).__name__}; will retry")
+                                    print(
+                                        f"Codex usage refresh failed: {error}. Will retry…",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                last_usage = now
+                                changed = True
+                            if now - last_task_refresh >= TASK_REFRESH_SECONDS:
+                                try:
+                                    server_running_count = await app_server.running_task_count()
+                                    refreshed_count = max(
+                                        server_running_count, watcher.running_count
+                                    )
+                                    changed = changed or refreshed_count != running_count
+                                    running_count = refreshed_count
+                                except Exception as error:
+                                    report("warning", message=f"Task refresh failed: {type(error).__name__}; will retry")
+                                    print(
+                                        f"Codex task-count refresh failed: {error}. Will retry…",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                last_task_refresh = now
+                            if changed or now - last_heartbeat >= HEARTBEAT_SECONDS:
+                                # Slow account refreshes must not consume the notice before sending.
+                                if new_interruption:
+                                    watcher.interrupted_until = time.monotonic() + INTERRUPTION_NOTICE_SECONDS
+                                await send_payload(
+                                    client,
+                                    heartbeat_payload(usage, watcher, running_count, completed),
                                 )
-                            last_usage = now
-                            changed = True
-                        if now - last_task_refresh >= TASK_REFRESH_SECONDS:
-                            try:
-                                refreshed_count = await app_server.running_task_count()
-                                refreshed_count = max(
-                                    refreshed_count, watcher.running_count
-                                )
-                                changed = changed or refreshed_count != running_count
-                                running_count = refreshed_count
-                            except Exception as error:
-                                print(
-                                    f"Codex task-count refresh failed: {error}. Will retry…",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
-                            last_task_refresh = now
-                        if changed or now - last_heartbeat >= HEARTBEAT_SECONDS:
-                            await send_payload(
-                                client,
-                                heartbeat_payload(usage, watcher, running_count, completed),
-                            )
-                            last_heartbeat = now
-                        await asyncio.sleep(1.0)
+                                last_heartbeat = now
+                                report("synced", usage=usage, running=running_count, synced_at=time.time())
+                                if completed:
+                                    report("completion", message="Completion sent; sound follows device volume and quiet hours")
+                            await asyncio.sleep(1.0)
             except Exception as error:  # BLE backend errors vary by operating system.
+                if control is not None and getattr(control, "stop_requested", False):
+                    break
+                report("retrying", message=f"{type(error).__name__}: {error}" or "连接中断")
                 print(f"Bridge disconnected: {error}. Retrying…", file=sys.stderr, flush=True)
                 await asyncio.sleep(3.0)
     finally:
@@ -571,7 +684,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Show Codex usage and task-completion alerts on FoloToy AI Passport"
     )
-    parser.add_argument("--device", help="exact BLE device name or address")
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument("--device", help="exact BLE device name or address")
+    transport.add_argument("--lan", metavar="IP", help="connect over encrypted local Wi-Fi")
+    parser.add_argument("--lan-port", type=int, default=8765)
+    parser.add_argument("--lan-key-file", default=str(Path.home()/".codex"/"passport-lan.json"))
     parser.add_argument("--codex", default="codex", help="path to the Codex CLI executable")
     parser.add_argument(
         "--dry-run", action="store_true", help="print one sanitized payload without using BLE"

@@ -1,0 +1,2 @@
+# Optional, verified Windows compatibility runtime; not needed for other IMEs.
+frida==17.18.0; sys_platform == "win32"

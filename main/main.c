@@ -26,9 +26,13 @@
 #include "buddy_protocol.h"
 #include "buddy_settings.h"
 #include "buddy_state.h"
+#include "buddy_lan.h"
+#include "buddy_lan_filter.h"
 #include "buddy_ui.h"
 #include "buddy_alert.h"
 #include "buddy_sound.h"
+#include "buddy_voice.h"
+#include "esp_wifi.h"
 
 #define BUDDY_CRITICAL_QUEUE_DEPTH 1U
 #define BUDDY_BUTTON_QUEUE_DEPTH 4U
@@ -108,6 +112,9 @@ typedef struct {
 } buddy_rx_slot_t;
 
 static const char *const TAG = "buddy_app";
+static QueueHandle_t s_lan_queue;
+static bool s_lan_mode;
+static bool s_lan_setup;
 static QueueHandle_t s_link_queue;
 static QueueHandle_t s_passkey_queue;
 static QueueHandle_t s_security_queue;
@@ -318,6 +325,16 @@ static void buddy_queue_rx_line(const buddy_ble_event_t *event)
         buddy_apply_rx_retry_counts(&retry);
         buddy_notify_app();
     }
+}
+
+static bool on_lan_receive(const char *json, size_t length, uint32_t generation)
+{
+    buddy_event_t event;
+    if (!atomic_load(&s_app_ready) || !buddy_lan_parse(json, length, &event)) return false;
+    event.ble.connection_generation = generation;
+    if (xQueueSend(s_lan_queue, &event, pdMS_TO_TICKS(500)) != pdTRUE) return false;
+    buddy_notify_app();
+    return true;
 }
 
 static void on_key(bsp_btn_t button, bsp_btn_ev_t event, void *context)
@@ -700,12 +717,16 @@ static esp_err_t buddy_set_ble_enabled(buddy_state_t *state, bool enabled)
 static esp_err_t buddy_factory_reset(buddy_state_t *state)
 {
     buddy_settings_snapshot_t defaults = {0};
+    if (buddy_lan_forget() != ESP_OK) return ESP_FAIL;
 
     if (buddy_settings_factory_reset() != ESP_OK) {
         buddy_copy_text(state->message, sizeof(state->message), "恢复出厂设置失败");
         return ESP_FAIL;
     }
+    if (s_lan_mode) esp_restart();
     defaults.ble_enabled = true;
+    defaults.sound_mode = BUDDY_SOUND_AUTO;
+    defaults.sleep_mode = BUDDY_SLEEP_5_MIN;
     buddy_default_name(defaults.name);
     if (buddy_settings_set_name(defaults.name) != ESP_OK ||
         buddy_settings_flush(true) != ESP_OK) {
@@ -786,6 +807,7 @@ static void buddy_orchestrator_record_permission(void *context,
 
 static esp_err_t buddy_orchestrator_unpair(void *context)
 {
+    if (s_lan_mode) return ESP_ERR_INVALID_STATE;
     buddy_state_t *state = context;
 
     if (buddy_ble_ensure_initialized() != ESP_OK || buddy_ble_delete_bonds() != ESP_OK) {
@@ -803,6 +825,17 @@ static esp_err_t buddy_orchestrator_factory_reset(void *context)
 
 static esp_err_t buddy_orchestrator_set_ble(void *context, bool enabled)
 {
+    if (s_lan_mode) {
+        buddy_state_t *state = context;
+        if (enabled && buddy_settings_set_ble_enabled(true) == ESP_OK &&
+            buddy_settings_flush(true) == ESP_OK && buddy_lan_select_bluetooth(true) == ESP_OK) {
+            buddy_voice_disconnect();
+            esp_restart();
+        }
+        state->settings.ble_enabled = false;
+        buddy_copy_text(state->message, sizeof(state->message), "切换失败");
+        return ESP_FAIL;
+    }
     return buddy_set_ble_enabled(context, enabled);
 }
 
@@ -847,16 +880,53 @@ static buddy_orchestrator_ops_t buddy_orchestrator_ops(buddy_state_t *state)
 static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *action,
                                  buddy_event_t *result_event)
 {
-    static bool applied_screen_off;
-    if (applied_screen_off != state->screen_off) {
-        bsp_display_backlight(state->screen_off ? 0U : (20U + state->brightness_level * 20U));
-        applied_screen_off = state->screen_off;
+    static int applied_brightness = -1;
+    static bool voice_wifi_awake;
+    static wifi_ps_type_t previous_wifi_ps;
+    if (state->page != BUDDY_PAGE_HOME || state->menu_open || state->prompt.id[0] ||
+        state->confirmation_pending || state->passkey_visible || !(s_lan_mode ? buddy_lan_connected() : buddy_ble_is_encrypted())) buddy_voice_stop();
+    else if (action->voice_toggle && buddy_voice_toggle()) {
+        if (s_lan_mode && !voice_wifi_awake && esp_wifi_get_ps(&previous_wifi_ps) == ESP_OK) {
+            voice_wifi_awake = esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK;
+        }
+        buddy_sound_voice_wake();
+    }
+    state->voice_recording = buddy_voice_recording();
+    if (!state->voice_recording && voice_wifi_awake) {
+        (void)esp_wifi_set_ps(previous_wifi_ps);
+        voice_wifi_awake = false;
+    }
+    if (state->voice_recording) { state->screen_off = false; state->screen_dimmed = false; }
+    if (action->type == BUDDY_ACTION_LAN_ENABLE) {
+        esp_err_t err = buddy_settings_flush(true);
+        if (err == ESP_OK) err = buddy_lan_select_bluetooth(false);
+        if (err == ESP_OK && !buddy_lan_has_credentials()) err = buddy_lan_request_setup();
+        if (err == ESP_OK) {
+            buddy_voice_disconnect();
+            esp_restart();
+        }
+        buddy_copy_text(state->message, sizeof(state->message), "切换失败");
+        return false;
+    }
+    if (action->type == BUDDY_ACTION_LAN_SETUP) {
+        if (s_lan_setup || buddy_lan_request_setup() == ESP_OK) {
+            (void)buddy_settings_flush(true);
+            esp_restart();
+        }
+        return false;
+    }
+    unsigned brightness = state->screen_off ? 0U :
+                          state->screen_dimmed ? 20U : (20U + state->brightness_level * 20U);
+    if (applied_brightness != (int)brightness) {
+        bsp_display_backlight(brightness);
+        applied_brightness = (int)brightness;
     }
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
     uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000ULL;
-    if (action->play_completion_sound && buddy_alert_allowed(state->settings.sound_mode,
+    if ((action->play_completion_sound || action->play_connection_sound) && buddy_alert_allowed(state->settings.sound_mode,
             state->epoch_seconds, state->timezone_offset_seconds, state->time_received_ms, now_ms)) {
-        buddy_sound_notify();
+        if (action->play_completion_sound) buddy_sound_notify();
+        else buddy_sound_notify_connected();
     }
 
     if (action->type == BUDDY_ACTION_DISPLAY_BACKLIGHT) {
@@ -936,8 +1006,20 @@ static void buddy_publish_rendered_view(const buddy_ui_snapshot_t *snapshot)
 static void buddy_render(buddy_state_t *state, const buddy_action_t *action, uint64_t now_ms)
 {
     static buddy_ui_snapshot_t snapshot;
+    static uint64_t last_lan_render_ms;
+
+    /* A full indexed canvas is CPU-heavy with Wi-Fi's flash-resident driver.
+     * Match the pet's 5 fps animation clock and leave time for LAN/USB/idle. */
+    if ((s_lan_mode || buddy_voice_recording()) && now_ms - last_lan_render_ms < 200U) return;
+    last_lan_render_ms = now_ms;
 
     buddy_state_snapshot(state, &snapshot);
+    buddy_voice_status_t voice;
+    buddy_voice_status(&voice);
+    snapshot.voice_ready = voice.ready;
+    snapshot.voice_recording = voice.recording;
+    snapshot.voice_seconds = voice.seconds;
+    snapshot.voice_peak = voice.peak;
     if (!bsp_lvgl_lock(1000)) {
         return;
     }
@@ -956,6 +1038,20 @@ static bool buddy_handle_rx(buddy_state_t *state, buddy_rx_slot_t *slot,
 {
     buddy_orchestrator_ops_t ops = buddy_orchestrator_ops(state);
 
+    if (slot->length == 16 &&
+        (memcmp(slot->data, "{\"voice\":\"poll\"}", 16) == 0 ||
+         memcmp(slot->data, "{\"voice\":\"stop\"}", 16) == 0)) {
+        if (!buddy_ble_is_generation_secure(slot->connection_generation)) return false;
+        static char voice_reply[2048];
+        if (memcmp(slot->data, "{\"voice\":\"stop\"}", 16) == 0) buddy_voice_disconnect();
+        size_t length = buddy_voice_poll(voice_reply, sizeof(voice_reply) - 1);
+        if (length) {
+            voice_reply[length++] = '\n';
+            if (buddy_ble_send_for_generation(voice_reply, length, slot->connection_generation) != ESP_OK)
+                buddy_voice_disconnect();
+        }
+        return false;
+    }
     (void)event;
     return buddy_orchestrator_process_rx(state, &ops, slot->data, slot->length,
                                          slot->connection_generation, now_ms, action);
@@ -1000,11 +1096,20 @@ static void buddy_app_task(void *context)
     static buddy_event_t event;
     uint64_t last_battery_ms = 0;
     uint64_t last_settings_ms = 0;
+    uint32_t last_lan_generation = 0;
 
     (void)context;
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     buddy_state_init(&state, &s_initial_settings);
     buddy_sample_battery(&state);
+    state.lan_mode = s_lan_mode;
+    state.lan_setup = s_lan_setup;
+    if (s_lan_setup) {
+        buddy_lan_setup_password(state.lan_setup_password);
+        state.page = BUDDY_PAGE_INFO;
+        state.info_page = 4;
+    }
+    if (s_lan_mode) state.settings.ble_enabled = false;
 
     for (;;) {
         QueueHandle_t ready = buddy_wait_for_queue();
@@ -1013,9 +1118,26 @@ static void buddy_app_task(void *context)
 
         memset(&action, 0, sizeof(action));
 
-        if (ready == s_link_queue || ready == s_passkey_queue ||
+        if (s_lan_mode) {
+            bool connected = buddy_lan_connected();
+            uint32_t generation = buddy_lan_generation();
+            if (state.lan_connected && (!connected || generation != last_lan_generation)) {
+                buddy_event_t lost = {.type=BUDDY_EVENT_LAN_DISCONNECTED};
+                buddy_state_reduce(&state, &lost, now_ms, &action);
+            }
+            state.lan_connected = connected;
+            last_lan_generation = generation;
+            buddy_lan_ip(state.lan_ip);
+        }
+        if (s_lan_mode && ready == NULL && xQueueReceive(s_lan_queue, &event, 0) == pdTRUE) {
+            if (buddy_lan_connected() && event.ble.connection_generation == buddy_lan_generation()) {
+                buddy_state_reduce(&state, &event, now_ms, &action);
+                reduced = true;
+            }
+        }
+        if (!reduced && (ready == s_link_queue || ready == s_passkey_queue ||
             ready == s_security_queue || ready == s_bond_queue ||
-            ready == s_button_queue) {
+            ready == s_button_queue)) {
             buddy_control_event_t control;
 
             if (xQueueReceive(ready, &control, 0) == pdTRUE &&
@@ -1023,7 +1145,7 @@ static void buddy_app_task(void *context)
                 buddy_state_reduce(&state, &event, now_ms, &action);
                 reduced = true;
             }
-        } else if (ready == s_rx_priority_queue || ready == s_rx_normal_queue) {
+        } else if (!reduced && (ready == s_rx_priority_queue || ready == s_rx_normal_queue)) {
             buddy_rx_slot_t *slot = NULL;
 
             if (xQueueReceive(ready, &slot, 0) == pdTRUE && slot != NULL) {
@@ -1058,7 +1180,10 @@ static void buddy_app_task(void *context)
 
 static void buddy_screenshot_task(void *context)
 {
-    char request[64];
+    char request[1024];
+    size_t length = 0;
+    bool discarding = false;
+    uint64_t last_byte_ms = 0;
 
     (void)context;
     setvbuf(stdin, NULL, _IONBF, 0);
@@ -1067,16 +1192,38 @@ static void buddy_screenshot_task(void *context)
     usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_LF);
 
     for (;;) {
-        size_t length;
-
-        if (fgets(request, sizeof(request), stdin) == NULL) {
+        int byte = fgetc(stdin);
+        if (byte == EOF) {
             clearerr(stdin);
-            vTaskDelay(pdMS_TO_TICKS(50));
+            if ((length || discarding) && buddy_now_ms() - last_byte_ms > 5000U) {
+                memset(request, 0, sizeof(request));
+                length = 0;
+                discarding = false;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-        length = strcspn(request, "\r\n");
+        last_byte_ms = buddy_now_ms();
+        if (byte == '\r') continue;
+        if (byte != '\n') {
+            if (!discarding && length + 1U < sizeof(request)) request[length++] = (char)byte;
+            else discarding = true;
+            continue;
+        }
+        if (discarding) {
+            memset(request, 0, sizeof(request));
+            length = 0;
+            discarding = false;
+            continue;
+        }
         request[length] = '\0';
+        length = 0;
+        if (buddy_lan_usb_command(request)) {
+            memset(request, 0, sizeof(request));
+            continue;
+        }
         if (strcmp(request, "FAP_SCREENSHOT_V1") != 0) {
+            memset(request, 0, sizeof(request));
             continue;
         }
 
@@ -1089,6 +1236,7 @@ static void buddy_screenshot_task(void *context)
         }
         funlockfile(stdout);
         esp_log_level_set("*", previous_level);
+        memset(request, 0, sizeof(request));
     }
 }
 
@@ -1140,6 +1288,9 @@ void app_main(void)
         }
     }
 
+    s_lan_setup = buddy_lan_setup_requested();
+    s_lan_mode = s_lan_setup || buddy_lan_configured();
+    if (s_lan_mode) s_lan_queue = xQueueCreate(2, sizeof(buddy_event_t));
     s_link_queue = xQueueCreate(BUDDY_CRITICAL_QUEUE_DEPTH, sizeof(buddy_control_event_t));
     s_passkey_queue = xQueueCreate(BUDDY_CRITICAL_QUEUE_DEPTH,
                                    sizeof(buddy_control_event_t));
@@ -1151,7 +1302,7 @@ void app_main(void)
                                      sizeof(buddy_rx_slot_t *));
     s_rx_priority_queue = xQueueCreate(BUDDY_RX_PRIORITY_QUEUE_DEPTH,
                                        sizeof(buddy_rx_slot_t *));
-    if (s_link_queue == NULL || s_passkey_queue == NULL || s_security_queue == NULL ||
+    if ((s_lan_mode && s_lan_queue == NULL) || s_link_queue == NULL || s_passkey_queue == NULL || s_security_queue == NULL ||
         s_bond_queue == NULL || s_button_queue == NULL || s_rx_normal_queue == NULL ||
         s_rx_priority_queue == NULL ||
         xTaskCreate(buddy_app_task, "buddy_app", BUDDY_APP_STACK_SIZE, NULL,
@@ -1166,7 +1317,10 @@ void app_main(void)
     if (bsp_button_init(on_key, NULL) != ESP_OK) {
         ESP_LOGW(TAG, "button initialization failed; approvals remain fail-closed");
     }
-    if (s_initial_settings.ble_enabled) {
+    if (s_lan_mode) {
+        err = s_lan_setup ? buddy_lan_start_setup() : buddy_lan_start(on_lan_receive);
+        if (err != ESP_OK) ESP_LOGE(TAG, "LAN startup failed: %s", esp_err_to_name(err));
+    } else if (s_initial_settings.ble_enabled) {
         err = buddy_ble_ensure_initialized();
         if (err == ESP_OK) {
             err = buddy_ble_start();

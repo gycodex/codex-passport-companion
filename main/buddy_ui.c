@@ -236,7 +236,8 @@ static void draw_status_bar(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     time_t epoch = (time_t)(s->epoch_seconds + s->timezone_offset_seconds + age_ms / 1000U);
     struct tm tm_value;
 
-    snprintf(left, sizeof(left), "%s", s->ble_connected ? "已连接" : "未连接");
+    snprintf(left, sizeof(left), "%s", s->lan_connected ? "已连接LAN" :
+             (s->ble_connected ? "已连接BLE" : "未连接"));
     if (s->epoch_seconds > 0 && gmtime_r(&epoch, &tm_value) != NULL) {
         snprintf(center, sizeof(center), "%02d:%02d", tm_value.tm_hour, tm_value.tm_min);
     } else {
@@ -250,9 +251,9 @@ static void draw_status_bar(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     } else {
         snprintf(battery, sizeof(battery), "电量--");
     }
-    text(layer, 8, 7, 72, s->ble_connected ? COL_GREEN : COL_DIM, left, false, LV_TEXT_ALIGN_LEFT);
-    text(layer, 80, 7, 72, COL_DIM, center, false, LV_TEXT_ALIGN_CENTER);
-    text(layer, 152, 7, 80, battery_color, battery, false, LV_TEXT_ALIGN_RIGHT);
+    text(layer, 8, 7, 80, (s->ble_connected || s->lan_connected) ? COL_GREEN : COL_DIM, left, false, LV_TEXT_ALIGN_LEFT);
+    text(layer, 88, 7, 56, COL_DIM, center, false, LV_TEXT_ALIGN_CENTER);
+    text(layer, 144, 7, 88, battery_color, battery, false, LV_TEXT_ALIGN_RIGHT);
     rule(layer, 8, 25, 224, COL_LINE);
 }
 
@@ -264,7 +265,7 @@ static void draw_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     draw_buddy(layer, s, false);
     rule(layer, 18, BUDDY_UI_INFO_Y, 204, COL_LINE);
     snprintf(caption, sizeof(caption), "%s", s->message[0] ? s->message :
-             (s->ble_connected ? "助手已就绪" : "请启动电脑端桥接程序进行配对"));
+             ((s->ble_connected || s->lan_connected) ? "助手已就绪" : "请启动电脑端桥接程序进行配对"));
     wrapped_text(layer, 18, 174, 204, s->heartbeat_stale ? COL_DIM : COL_INK,
                  caption, 8);
     text(layer, 8, 300, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
@@ -294,27 +295,42 @@ static void usage_reset_text(char *destination, size_t size, uint64_t resets_at,
     }
 }
 
-static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
+static void draw_home_companion(lv_layer_t *layer, const buddy_ui_snapshot_t *s, bool compact)
 {
-    const buddy_i4_clip_t clip = {.x = 16, .y = 180, .w = 208, .h = 78};
+    const buddy_i4_clip_t clip = {.x = 16, .y = compact ? 204 : 180, .w = 208, .h = compact ? 66 : 78};
     buddy_sprite_bounds_t bounds;
-    uint8_t state = art_state(s->character);
+    uint8_t state = s->voice_recording ? BUDDY_SPRITE_TALK : art_state(s->character);
     int x = 88;
-    const char *caption = "Ready";
+    const char *caption = "准备就绪";
     lv_color_t color = COL_DIM;
 
     if (buddy_sprite_bounds(s->species, state, s_tick, &bounds)) {
         x = (UI_W - bounds.w) / 2 - bounds.x;
     }
-    rule(layer, 96, 255, 48, COL_LINE);
-    buddy_sprite_render(&s_surface, &clip, s->species, state, s_tick, x, 188);
-    if (!s->ble_connected || s->heartbeat_stale) {
-        caption = "Waiting for sync";
-    } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
-        caption = "Task complete";
+    rule(layer, 96, compact ? 264 : 255, 48, COL_LINE);
+    buddy_sprite_render(&s_surface, &clip, s->species, state,
+                        s->voice_recording && s->voice_peak < 500 ? 0 : s_tick,
+                        x, compact ? 198 : 188);
+    if (s->voice_recording) {
+        /* Audio-reactive bars flank every pet species without covering its face. */
+        unsigned level = s->voice_peak / 350U;
+        if (level > 28U) level = 28U;
+        for (unsigned i = 0; i < 4; ++i) {
+            unsigned height = 3U + level * (1U + (s_tick + i) % 4U) / 4U;
+            int center = compact ? 238 : 220;
+            for (unsigned side = 0; side < 2; ++side)
+                box(layer, (side ? 176 : 36) + (int)i * 7, center - (int)height / 2,
+                    4, (int)height, COL_GREEN, COL_GREEN, 0, 0);
+        }
+        caption = "语音输入中";
+        color = COL_GREEN;
+    } else if (!(s->ble_connected || s->lan_connected) || s->heartbeat_stale) {
+        caption = "等待同步";
+    } else if (!s->voice_recording && s->character == BUDDY_CHARACTER_CELEBRATE) {
+        caption = "任务完成";
         color = COL_GREEN;
     } else if (s->running > 0U) {
-        caption = "Working...";
+        caption = "工作中…";
         color = COL_GREEN;
     }
     text(layer, 18, 266, 204, color, caption, false, LV_TEXT_ALIGN_CENTER);
@@ -326,34 +342,42 @@ static void draw_home(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     char reset[32];
     buddy_usage_window_t windows[2];
     size_t count = buddy_usage_windows(&s->codex_usage, windows);
-    text(layer, 8, 44, 224, COL_ORANGE, "Codex 使用量", true, LV_TEXT_ALIGN_CENTER);
+    bool compact = count == 2U;
+    text(layer, 8, 38, 224, COL_ORANGE, "Codex 使用量", true, LV_TEXT_ALIGN_CENTER);
     snprintf(value, sizeof(value), "进行中：%u 个任务", s->running);
-    text(layer, 8, 64, 224, s->running > 0 ? COL_GREEN : COL_DIM,
+    text(layer, 8, 58, 224, s->running > 0 ? COL_GREEN : COL_DIM,
          value, false, LV_TEXT_ALIGN_CENTER);
     if (count == 0U) {
         wrapped_text(layer, 22, 113, 196, COL_INK,
-                     "Usage unavailable.\nKeep the bridge running.", 5);
+                     "暂无用量数据。\n请保持桥接程序运行。", 5);
     }
     for (size_t index = 0; index < count; ++index) {
         const buddy_usage_window_t *window = &windows[index];
-        int top = 80 + (int)index * 98;
+        int top = 80 + (int)index * (compact ? 64 : 98);
         lv_color_t color = index == 0U ? COL_GREEN : COL_YELLOW;
-        box(layer, 8, top, 224, 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
-        text(layer, 18, top + 13, 100, COL_INK, window->label,
+        box(layer, 8, top, 224, compact ? 58 : 91, lv_color_hex(0x151719), COL_LINE, 1, 3);
+        text(layer, 18, top + (compact ? 4 : 13), 100, COL_INK, window->label,
              false, LV_TEXT_ALIGN_LEFT);
         snprintf(value, sizeof(value), "剩余 %u%%", window->remaining);
-        text(layer, 116, top + 13, 106, window->remaining < 20U ? COL_RED : color,
+        text(layer, 116, top + (compact ? 4 : 13), 106, window->remaining < 20U ? COL_RED : color,
              value, false, LV_TEXT_ALIGN_RIGHT);
         for (unsigned i = 0; i < 10U; ++i) {
             bool on = i * 10U < window->remaining;
-            box(layer, 18 + (int)i * 20, top + 42, 16, 13, on ? color : COL_LINE,
+            box(layer, 18 + (int)i * 20, top + (compact ? 26 : 42), 16, compact ? 8 : 13, on ? color : COL_LINE,
                 on ? color : COL_LINE, 0, 1);
         }
         usage_reset_text(reset, sizeof(reset), window->resets_at, s);
-        text(layer, 18, top + 67, 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
+        text(layer, 18, top + (compact ? 39 : 67), 204, COL_DIM, reset, false, LV_TEXT_ALIGN_LEFT);
     }
-    if (count == 1U) draw_home_companion(layer, s);
-    text(layer, 8, 297, 224, COL_DIM, BUDDY_ACTION_HOME, false, LV_TEXT_ALIGN_CENTER);
+    if (count > 0U || s->voice_recording) draw_home_companion(layer, s, compact);
+    if (s->voice_recording) {
+        snprintf(value, sizeof(value), "%02u:%02u / 02:00  下键结束",
+                 s->voice_seconds / 60U, s->voice_seconds % 60U);
+        text(layer, 8, 297, 224, COL_GREEN, value, false, LV_TEXT_ALIGN_CENTER);
+    } else {
+        text(layer, 8, 284, 224, COL_DIM, "上键换页  下键语音", false, LV_TEXT_ALIGN_CENTER);
+        text(layer, 8, 302, 224, COL_DIM, "长按确认菜单", false, LV_TEXT_ALIGN_CENTER);
+    }
 }
 
 static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
@@ -362,31 +386,40 @@ static void draw_info(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     char body[512];
     char page[16];
     unsigned p = s->info_page < 6 ? s->info_page : 0;
-    text(layer, 14, 38, 180, COL_ORANGE, titles[p], true, LV_TEXT_ALIGN_LEFT);
+    text(layer, 14, 38, 180, COL_ORANGE, p == 4 ? "无线网络" : titles[p], true, LV_TEXT_ALIGN_LEFT);
     snprintf(page, sizeof(page), "%u / 6", p + 1);
     text(layer, 174, 43, 52, COL_DIM, page, false, LV_TEXT_ALIGN_RIGHT);
     rule(layer, 14, 66, 212, COL_LINE);
     switch (p) {
-    case 0: snprintf(body, sizeof(body), "Your desk companion.\n\nShows available usage windows and task completion alerts."); break;
-    case 1: snprintf(body, sizeof(body), "上键：切换界面\n下键：翻页或拒绝\n确认键：允许或更改\n长按确认键：打开菜单"); break;
+    case 0: snprintf(body, sizeof(body), "你的桌面伙伴。\n\n显示用量余量和任务完成提醒。"); break;
+    case 1: snprintf(body, sizeof(body), "上键：切换界面\n下键：翻页或拒绝\n确认键：允许或更改\n首页下键：语音输入\n长按确认键：打开菜单"); break;
     case 2: {
         buddy_usage_window_t windows[2];
         size_t count = buddy_usage_windows(&s->codex_usage, windows);
         size_t used = (size_t)snprintf(body, sizeof(body),
-            "Tasks: %u\nRunning: %u\n", s->total, s->running);
+            "任务：%u\n进行中：%u\n", s->total, s->running);
         if (count == 0U) {
-            snprintf(body + used, sizeof(body) - used, "\nUsage unavailable.");
+            snprintf(body + used, sizeof(body) - used, "\n暂无用量数据。");
         }
         for (size_t i = 0; i < count && used < sizeof(body); ++i) {
             int written = snprintf(body + used, sizeof(body) - used,
-                "\n%s left: %u%%", windows[i].label, windows[i].remaining);
+                "\n%s 剩余：%u%%", windows[i].label, windows[i].remaining);
             if (written < 0) break;
             used += (size_t)written;
         }
         break;
     }
     case 3: snprintf(body, sizeof(body), "名称\n%s\n\n所有者\n%s\n\n屏幕：240 × 320", s->name[0] ? s->name : "Codex 助手", s->owner[0] ? s->owner : "-"); break;
-    case 4: snprintf(body, sizeof(body), "%s\n\n%s\n%s\n\n请在电脑上运行\nCodex 桥接程序", s->name[0] ? s->name : "Codex 助手", s->ble_connected ? "已连接" : "正在广播", s->ble_encrypted ? "连接已加密" : "连接未加密"); break;
+    case 4: if (s->lan_setup) {
+        snprintf(body, sizeof(body), "连接热点：\nPassport Setup\n\n密码：\n%s\n\nhttp://192.168.4.1\n\n10 分钟后关闭\n确认键：退出配网", s->lan_setup_password);
+        break;
+    } else if (s->lan_mode) {
+        snprintf(body, sizeof(body), "无线网络\n\nIP：%s\n端口：8765\n\n%s\n\n确认键：无线配网",
+                 s->lan_ip[0] ? s->lan_ip : "连接中…",
+                 s->lan_connected ? "已加密连接" : "等待桥接连接");
+        break;
+    }
+    snprintf(body, sizeof(body), "当前：蓝牙\n\n确认键：无线配网\n\n手机连接设备热点\n设置 2.4 GHz 无线网络。\n\n也可通过 USB 配网。"); break;
     default: snprintf(body, sizeof(body), "Codex 使用量助手\n\n适用于 FoloToy AI Passport\nESP32-C3 硬件\n\n基于公开的 Buddy 参考分支"); break;
     }
     wrapped_text(layer, 16, 82 - s_scroll, 208, COL_INK, body, 18);
@@ -407,13 +440,13 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
         const char *suffix = "";
         char value[12];
         if (!s->reset_open && i == BUDDY_SETTINGS_BRIGHTNESS) { snprintf(value, sizeof(value), "%u/4", s->brightness_level); suffix = value; }
-        else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "Off" : (s->sound_mode == BUDDY_SOUND_ON ? "On" : "Auto");
+        else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "关闭" : (s->sound_mode == BUDDY_SOUND_ON ? "开启" : "自动");
         else if (!s->reset_open && i == BUDDY_SETTINGS_SLEEP) {
-            static const char *const modes[] = {"1 min", "5 min", "10 min", "Never"};
+            static const char *const modes[] = {"1 分钟", "5 分钟", "10 分钟", "永不"};
             suffix = modes[s->sleep_mode < BUDDY_SLEEP_COUNT ? s->sleep_mode : BUDDY_SLEEP_5_MIN];
         }
+        else if (!s->reset_open && i == BUDDY_SETTINGS_WIFI) suffix = s->lan_mode ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_BLE) suffix = s->ble_enabled ? "开" : "关";
-        else if (!s->reset_open && i == BUDDY_SETTINGS_TRANSCRIPT) suffix = s->transcript_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_ASCII_PET) suffix = buddy_sprite_name(s->species);
         snprintf(row, sizeof(row), "%s", items[i]);
         if (active) box(layer, 12, y - 7, 216, 24, COL_ORANGE, COL_ORANGE, 0, 3);
@@ -425,8 +458,12 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
 
 static void draw_settings(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
 {
-    static const char *const settings[] = {"屏幕亮度", "声音", "Auto sleep", "蓝牙", "无线网络", "指示灯", "任务记录", "时钟旋转", "伙伴形象", "重置", "返回"};
-    static const char *const reset[] = {"删除自定义角色", "恢复出厂设置", "解除蓝牙配对", "返回"};
+    static const char *const settings[] = {"屏幕亮度", "声音", "自动睡眠", "蓝牙", "Wi-Fi", "无线网络", "伙伴形象", "重置", "返回"};
+    static const char *const reset[] = {"恢复出厂设置", "解除蓝牙配对", "返回"};
+    _Static_assert(sizeof(settings) / sizeof(settings[0]) == BUDDY_SETTINGS_COUNT,
+                   "Settings labels must match navigation");
+    _Static_assert(sizeof(reset) / sizeof(reset[0]) == BUDDY_RESET_COUNT,
+                   "Reset labels must match navigation");
     draw_list(layer, s->reset_open ? "重置" : "设置", s->reset_open ? reset : settings,
               s->reset_open ? BUDDY_RESET_COUNT : BUDDY_SETTINGS_COUNT,
               s->reset_open ? s->reset_selection : s->settings_selection, s);
@@ -475,9 +512,9 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
         panel(layer, 154, 158, s->approval_locked ? COL_DIM : COL_RED, "助手请求授权", body,
               s->approval_locked ? (s->permission_delivery == BUDDY_PERMISSION_DELIVERY_FAILED ? "发送失败" : "正在发送……") : BUDDY_ACTION_APPROVAL);
     } else if (overlay == BUDDY_OVERLAY_MENU) {
-        static const char *const menu[] = {"设置", "关闭屏幕", "帮助", "关于", "演示", "关闭菜单"};
+        static const char *const menu[] = {"设置", "关闭屏幕", "帮助", "关于", "关闭菜单"};
         unsigned i;
-        box(layer, 38, 48, 164, 224, lv_color_hex(0x151719), COL_INK, 2, 5);
+        box(layer, 38, 48, 164, 74 + BUDDY_MENU_COUNT * 25, lv_color_hex(0x151719), COL_INK, 2, 5);
         text(layer, 52, 61, 136, COL_ORANGE, "菜单", true, LV_TEXT_ALIGN_CENTER);
         rule(layer, 52, 88, 136, COL_LINE);
         for (i = 0; i < BUDDY_MENU_COUNT; ++i) {
@@ -486,7 +523,7 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
             if (active) box(layer, 48, y - 7, 144, 21, COL_ORANGE, COL_ORANGE, 0, 2);
             text(layer, 56, y, 128, active ? COL_BG : COL_INK, menu[i], false, LV_TEXT_ALIGN_CENTER);
         }
-    } else if (s->character == BUDDY_CHARACTER_CELEBRATE) {
+    } else if (!s->voice_recording && s->character == BUDDY_CHARACTER_CELEBRATE) {
         buddy_usage_window_t windows[2];
         /* The single-window home already celebrates through its pet and caption. */
         if (s->page != BUDDY_PAGE_HOME || buddy_usage_windows(&s->codex_usage, windows) != 1U) {

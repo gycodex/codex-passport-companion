@@ -2,7 +2,6 @@
 
 [简体中文](README.zh_CN.md) · **English**
 
-> **Need the LAN / Wi-Fi version?** The `main` branch is the Bluetooth version. For computers without Bluetooth, use the [feature/lan-connection branch](https://github.com/gycodex/codex-passport-companion/tree/feature/lan-connection), which supports phone hotspot provisioning and encrypted LAN sync. Use both the firmware and bridge from that branch. See the [LAN setup guide](https://github.com/gycodex/codex-passport-companion/blob/feature/lan-connection/docs/LAN.md).
 
 This firmware turns FoloToy AI Passport into a private Codex desk companion. It shows the
 remaining share of the Codex usage windows actually returned by the service as progress bars, shows the
@@ -11,13 +10,48 @@ writes a final answer. The top-right status area also shows the battery level.
 
 Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
 
-Current firmware version: **0.1.0-idle-sleep**.
+Current branch firmware version: **0.2.2**.
+
+**Download:** [v0.2.2 prerelease](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2).
+Windows users can download the portable ZIP with Python, dependencies, firmware and the
+USB updater included. See [download and installation guide](docs/DOWNLOADS.md).
+
+The computer bridge recognizes `turn_aborted` session events: it retires only the matching
+turn and briefly displays **Task interrupted** on the home page for about six seconds.
+Interruption does not increment the completion counter or trigger a completion celebration
+or chime. Other tasks keep running; a completion in the same batch takes display priority.
+Startup and reconnect establish a baseline without replaying old interruption alerts.
+Restart the updated bridge to use this feature; no firmware reflash is needed because it
+uses the existing status caption. Waiting for input, approvals, and failed turns are not
+integrated yet; a failed tool call does not imply a failed task.
+
+The first live Codex heartbeat after connecting or reconnecting over BLE/LAN plays a short 100 ms connection note. Routine heartbeats stay quiet. The note follows the existing sound mode and automatic quiet hours.
+
+**Microphone / speech input:** new firmware and console support physical-button BLE or LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). BLE audio requires secure pairing and MTU ≥185; real-world quality and stability are still being evaluated.
+
+**Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. Existing panel features work without reflashing; new microphone features require the matching firmware. See [setup and validation notes](docs/CONSOLE.md).
+
+**LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 
 The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it awake. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
 
 The implementation starts from this repository's `demo/claude-buddy-port` reference and
 keeps its bounded state machine, pixel UI, encrypted Nordic UART BLE transport, bonding,
 and reconnect behavior. A local bridge translates Codex data into the device protocol.
+
+## Quick start
+
+Use the **`main`** branch. Flash its firmware using ESP-IDF 5.5.3, install Python 3.10+ and the Codex CLI, and sign in to Codex. On Windows, double-click `start-console.vbs` (`start-console.cmd` shows startup errors); on macOS, run `bash start-console.command`.
+
+In the local page, select Bluetooth (scan and secure pairing) or LAN (device IP and pairing JSON). Both transports support usage, task status, reminders and microphone forwarding. For voice, install a virtual audio cable and configure your input method; this is not a native Bluetooth headset.
+
+- [中文快速开始](README.zh_CN.md#快速开始)
+- [Console, transport switching and another computer](docs/CONSOLE.md)
+- [Wi-Fi provisioning](docs/LAN.md)
+- [Microphone and Doubao setup](docs/VOICE.md)
+- [Validation and release limits](docs/RELEASE_CHECKLIST.md)
+
+On the home screen: UP changes page, DOWN toggles recording, hold OK opens the menu. The top-left status identifies BLE/LAN; battery remains top-right. Doubao compatibility is experimental and restricted to a verified Windows build. Other computers and long-running audio stability remain unverified.
 
 ## Data flow and privacy
 
@@ -42,7 +76,6 @@ reconciles after connectivity returns. A never-observed snapshot is shown as una
 Use ESP-IDF 5.5.3 and target ESP32-C3:
 
 ```bash
-get_idf553
 idf.py set-target esp32c3
 idf.py build
 idf.py flash monitor
@@ -77,6 +110,12 @@ it with `Ctrl+C`.
 
 ## Controls
 
+Settings exposes brightness, sound, auto sleep, Bluetooth, Wi-Fi, network setup,
+built-in pet selection, reset, and back. Reset retains factory reset and Bluetooth
+unpair, both with on-device confirmation, plus back. Nonfunctional LED, transcript,
+clock rotation, and custom-character deletion entries have been removed. This menu
+cleanup requires updated device firmware.
+
 - `UP`: cycle Home → Usage → Info.
 - `DOWN`: scroll or change the current sub-page.
 - Hold `OK`: open the menu.
@@ -85,7 +124,6 @@ it with `Ctrl+C`.
 ## Tests
 
 ```bash
-get_idf553
 cmake -S tests -B build-host
 cmake --build build-host
 ctest --test-dir build-host --output-on-failure
@@ -97,6 +135,10 @@ verify pairing, both usage windows, reset countdowns, running/ready state, compl
 celebration, reconnect, battery display, and a sustained BLE connection.
 
 ## Acknowledgements
+
+The microphone-to-input-method workflow was inspired by [xiabill/ai-passport](https://github.com/xiabill/ai-passport). Thank you for sharing the device audio and Mac bridge design.
+
+The hotspot and `192.168.4.1` provisioning workflow was inspired by [leo0183/leo-radio](https://github.com/leo0183/leo-radio). Thank you for sharing the implementation. This project implements that workflow independently within its C firmware and memory budget.
 
 This project builds on [zt20/codex-usage-ai-passport](https://github.com/zt20/codex-usage-ai-passport). Thank you to **zt20** for open-sourcing the Codex usage firmware and bridge that made this companion possible.
 
@@ -111,3 +153,11 @@ This repository adds adaptive usage windows, a home-screen pixel pet, completion
 ## Local enhancement: soft completion chime
 
 Settings > Sound cycles Off / On / Auto and persists the selection. Auto is the default: quiet from 22:00 to 08:00 in the computer-synchronized local time, and silent until time is known. New live completions play a short, low-volume two-note chime on a dedicated worker. Duplicate snapshots and reconnect catch-up do not replay sounds; bursts are coalesced.
+
+### Working dim mode
+
+The existing 1/5/10 minute auto-sleep setting dims active work to the minimum 20% backlight after the timer expires, while idle time still turns the display off. Routine heartbeats do not restart the timer. Completion, a transition to idle, a key press, or an attention prompt restores the selected brightness. Never disables both automatic behaviors. Device menus, status text and provisioning pages use Simplified Chinese.
+
+## License and release status
+
+The root [MIT license](LICENSE) covers original project contributions; inherited code and dependency terms are described in [NOTICE](NOTICE). Upstream authorization and remaining validation are tracked in [release checks](docs/RELEASE_CHECKLIST.md). Windows Doubao integration is experimental, opt-in, and restricted to an exact verified build. See [voice setup](docs/VOICE.md).

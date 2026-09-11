@@ -154,7 +154,11 @@ void buddy_sprite_render(buddy_i4_surface_t *surface, const buddy_i4_clip_t *cli
     }
     eye(surface, clip, x + 18, y + 24, closed);
     eye(surface, clip, x + 37, y + 24, closed);
-    if (state == 2) {
+    if (state == BUDDY_SPRITE_TALK) {
+        int opening = (int)(tick % 4U);
+        rect(surface, clip, x + 26, y + 38, 10, 2 + opening * 2, PIX_INK);
+        if (opening > 1) rect(surface, clip, x + 28, y + 39 + opening, 6, 2, pet->accent);
+    } else if (state == 2) {
         rect(surface, clip, x + 22 + (int)(tick % 3U), y + 39, 17, 3, pet->accent);
     } else if (state == 3) {
         rect(surface, clip, x + 27, y + 39, 8, 5, PIX_INK);

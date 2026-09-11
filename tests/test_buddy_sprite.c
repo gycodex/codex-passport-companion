@@ -14,7 +14,7 @@ int main(void)
     guarded[0] = guarded[sizeof(guarded) - 1] = 0xa5;
     buddy_i4_surface_init(&surface, guarded + 1, 64, 64, 32);
     assert(BUDDY_SPRITE_SPECIES_COUNT == 18);
-    assert(BUDDY_SPRITE_STATE_COUNT == 7);
+    assert(BUDDY_SPRITE_STATE_COUNT == 8);
     for (species = 0; species < BUDDY_SPRITE_SPECIES_COUNT; ++species) {
         assert(buddy_sprite_name(species)[0] != '\0');
         for (state = 0; state < BUDDY_SPRITE_STATE_COUNT; ++state) {

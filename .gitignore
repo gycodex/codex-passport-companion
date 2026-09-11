@@ -7,6 +7,12 @@ dependencies.lock
 .DS_Store
 .venv/
 .venv-bridge/
+.venv-console/
+.venv-flash/
+backups/
+.venv-console-backup-*/
 __pycache__/
 *.pyc
+passport-lan*.json*
+*.local.json
 dist/

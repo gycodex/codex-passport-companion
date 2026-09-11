@@ -183,9 +183,6 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             } else if (state->reset_selection == BUDDY_RESET_BACK) {
                 state->reset_open = false;
                 buddy_set_ui_refresh(action);
-            } else {
-                buddy_copy(state->message, sizeof(state->message), "尚未安装自定义角色");
-                buddy_set_ui_refresh(action);
             }
         }
         return;
@@ -229,11 +226,16 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             action->settings = state->settings;
         }
         break;
-    case BUDDY_SETTINGS_WIFI:
-    case BUDDY_SETTINGS_LED:
-    case BUDDY_SETTINGS_CLOCK_ROTATION:
-        buddy_copy(state->message, sizeof(state->message), "此硬件暂不支持该功能");
+    case BUDDY_SETTINGS_NETWORK:
+        state->page = BUDDY_PAGE_INFO;
+        state->info_page = 4;
         buddy_set_ui_refresh(action);
+        break;
+    case BUDDY_SETTINGS_WIFI:
+        if (action != NULL) {
+            action->type = state->lan_mode ? BUDDY_ACTION_BLE_TOGGLE : BUDDY_ACTION_LAN_ENABLE;
+            action->ble_enabled = true;
+        }
         break;
     case BUDDY_SETTINGS_ASCII_PET:
         state->species = (uint8_t)((state->species + 1U) % 18U);
@@ -246,13 +248,9 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             action->ble_enabled = state->settings.ble_enabled;
         }
         break;
-    case BUDDY_SETTINGS_TRANSCRIPT:
-        state->transcript_enabled = !state->transcript_enabled;
-        buddy_set_ui_refresh(action);
-        break;
     case BUDDY_SETTINGS_RESET:
         state->reset_open = true;
-        state->reset_selection = BUDDY_RESET_DELETE_CHARACTER;
+        state->reset_selection = BUDDY_RESET_FACTORY_RESET;
         buddy_set_ui_refresh(action);
         break;
     case BUDDY_SETTINGS_BACK:
@@ -288,15 +286,15 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
             } else if (state->menu_selection == BUDDY_MENU_ABOUT) {
                 state->page = BUDDY_PAGE_INFO;
                 state->info_page = 5;
-            } else if (state->menu_selection == BUDDY_MENU_DEMO) {
-                buddy_copy(state->message, sizeof(state->message), "演示功能暂不可用");
             }
             state->menu_open = false;
         }
         buddy_set_ui_refresh(action);
         return;
     }
-    if (state->page == BUDDY_PAGE_SETTINGS) {
+    if (key == BUDDY_KEY_OK && state->page == BUDDY_PAGE_INFO && state->info_page == 4) {
+        if (action != NULL) action->type = BUDDY_ACTION_LAN_SETUP;
+    } else if (state->page == BUDDY_PAGE_SETTINGS) {
         buddy_settings_click(state, key, action);
     } else if (key == BUDDY_KEY_UP) {
         state->page = state->page == BUDDY_PAGE_HOME
@@ -311,7 +309,10 @@ static void buddy_normal_click(buddy_state_t *state, buddy_key_t key,
         state->info_page = (uint8_t)((state->info_page + 1U) % 6U);
         buddy_set_ui_refresh(action);
     } else if (key == BUDDY_KEY_DOWN && state->page == BUDDY_PAGE_HOME) {
-        if (action != NULL) {
+        if (!state->passkey_visible) {
+            if (action != NULL) action->voice_toggle = true;
+            buddy_set_ui_refresh(action);
+        } else if (action != NULL) {
             action->type = BUDDY_ACTION_UI_SCROLL;
             action->scroll_delta = -24;
         }
@@ -339,16 +340,22 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
                                   buddy_action_t *action)
 {
     bool was_live = state->connected && !state->heartbeat_stale;
+    /* A live heartbeat confirms that the authenticated host bridge is ready. */
+    if (action != NULL) {
+        action->play_connection_sound = !was_live && heartbeat->connected && heartbeat->codex_usage.present;
+    }
     uint64_t level = heartbeat->codex_usage.present
                          ? heartbeat->codex_usage.completion_sequence
                          : heartbeat->tokens / BUDDY_TOKEN_CELEBRATION_STEP;
 
-    if (heartbeat->connected && (heartbeat->running > 0U || heartbeat->waiting > 0U ||
+    if (heartbeat->connected && (((heartbeat->running > 0U || heartbeat->waiting > 0U) &&
+            (!was_live || (state->running == 0U && state->waiting == 0U))) ||
             (was_live && level > state->highest_celebrated_level))) {
         state->screen_off = false;
         state->last_activity_ms = now_ms;
     }
-    if (was_live && (state->running > 0U || state->waiting > 0U)) {
+    if (was_live && (state->running > 0U || state->waiting > 0U) &&
+            heartbeat->running == 0U && heartbeat->waiting == 0U) {
         state->last_activity_ms = now_ms;
     }
     state->heartbeat = *heartbeat;
@@ -382,6 +389,18 @@ static void buddy_apply_heartbeat(buddy_state_t *state, const buddy_heartbeat_t 
     state->codex_usage = heartbeat->codex_usage;
     buddy_copy(state->message, sizeof(state->message), heartbeat->message);
     buddy_copy_entries(state->entries, heartbeat->entries);
+
+    /* Codex counters belong to the connected computer. A new session (or a
+     * reset local counter) establishes a baseline without replaying old alerts. */
+    if (heartbeat->codex_usage.present &&
+            (!was_live || level < state->highest_celebrated_level)) {
+        state->highest_celebrated_level = level;
+        state->settings.highest_celebrated_level = level;
+        state->temporary_character = BUDDY_CHARACTER_IDLE;
+        state->temporary_until_ms = 0;
+        buddy_set_ui_refresh(action);
+        return;
+    }
 
     if (level > state->highest_celebrated_level) {
         state->highest_celebrated_level = level;
@@ -496,7 +515,6 @@ void buddy_state_init(buddy_state_t *state, const buddy_settings_snapshot_t *set
     state->heartbeat_stale = true;
     state->brightness_level = 4;
     state->settings.sleep_mode = BUDDY_SLEEP_5_MIN;
-    state->transcript_enabled = true;
     if (settings != NULL) {
         state->settings = *settings;
         state->highest_celebrated_level = settings->highest_celebrated_level;
@@ -519,8 +537,9 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
     buddy_clear_stale_prompt(state, now_ms);
     if (event->type == BUDDY_EVENT_KEY_CLICK || event->type == BUDDY_EVENT_KEY_LONG) {
         state->last_activity_ms = now_ms;
-        if (state->screen_off) {
+        if (state->screen_off || state->screen_dimmed) {
             state->screen_off = false;
+            state->screen_dimmed = false;
             if (action != NULL) {
                 action->type = BUDDY_ACTION_DISPLAY_BACKLIGHT;
                 action->brightness_percent = (uint8_t)(20U + state->brightness_level * 20U);
@@ -636,8 +655,9 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
         buddy_apply_permission_result(state, &event->permission_result, now_ms, action);
         break;
     case BUDDY_EVENT_KEY_CLICK:
-        if (state->screen_off) {
+        if (state->screen_off || state->screen_dimmed) {
             state->screen_off = false;
+            state->screen_dimmed = false;
             if (action != NULL) {
                 action->type = BUDDY_ACTION_DISPLAY_BACKLIGHT;
                 action->brightness_percent =
@@ -690,6 +710,14 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
             buddy_set_ui_refresh(action);
         }
         break;
+    case BUDDY_EVENT_LAN_DISCONNECTED:
+        state->lan_connected = false;
+        state->connected = false;
+        state->heartbeat_stale = true;
+        buddy_clear_logical_session(state);
+        state->connection = BUDDY_CONNECTION_OFFLINE;
+        buddy_set_ui_refresh(action);
+        break;
     case BUDDY_EVENT_TICK:
         buddy_set_ui_refresh(action);
         break;
@@ -701,18 +729,21 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
                      state->confirmation != BUDDY_CONFIRM_NONE;
     bool working = state->connected && !state->heartbeat_stale &&
                    (state->running > 0U || state->waiting > 0U);
-    if (attention) state->screen_off = false;
-    if (working || attention) {
+    static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
+    uint8_t mode = state->settings.sleep_mode < BUDDY_SLEEP_COUNT
+                       ? state->settings.sleep_mode : BUDDY_SLEEP_5_MIN;
+    uint64_t delay = delays[mode];
+    bool expired = delay != 0U && now_ms >= state->last_activity_ms &&
+                   now_ms - state->last_activity_ms >= delay;
+    if (attention || state->lan_setup || state->voice_recording) {
+        state->screen_off = false;
+        state->screen_dimmed = false;
         state->last_activity_ms = now_ms;
+    } else if (working) {
+        state->screen_dimmed = expired;
     } else {
-        static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
-        uint8_t mode = state->settings.sleep_mode < BUDDY_SLEEP_COUNT
-                           ? state->settings.sleep_mode : BUDDY_SLEEP_5_MIN;
-        uint64_t delay = delays[mode];
-        if (delay != 0U && now_ms >= state->last_activity_ms &&
-                now_ms - state->last_activity_ms >= delay) {
-            state->screen_off = true;
-        }
+        state->screen_dimmed = false;
+        if (expired) state->screen_off = true;
     }
     buddy_refresh_character(state, now_ms);
 }
@@ -748,13 +779,17 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     snapshot->info_page = state->info_page;
     snapshot->menu_open = state->menu_open;
     snapshot->reset_open = state->reset_open;
-    snapshot->transcript_enabled = state->transcript_enabled;
     snapshot->brightness_level = state->brightness_level;
     snapshot->screen_off = state->screen_off;
     snapshot->species = state->species;
     snapshot->approval_locked = state->approval_locked;
     snapshot->permission_delivery = state->permission_delivery;
     snapshot->ble_connected = state->ble_connected;
+    snapshot->lan_mode = state->lan_mode;
+    snapshot->lan_setup = state->lan_setup;
+    memcpy(snapshot->lan_setup_password, state->lan_setup_password, sizeof(snapshot->lan_setup_password));
+    snapshot->lan_connected = state->lan_connected;
+    memcpy(snapshot->lan_ip, state->lan_ip, sizeof(snapshot->lan_ip));
     snapshot->ble_encrypted = state->ble_encrypted;
     snapshot->ble_enabled = state->settings.ble_enabled;
     snapshot->battery_available = state->battery_available;

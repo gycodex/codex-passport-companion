@@ -2,6 +2,18 @@ cmake_minimum_required(VERSION 3.16)
 project(buddy_host_tests C)
 
 enable_testing()
+add_executable(test_buddy_sound test_buddy_sound.c)
+target_include_directories(test_buddy_sound PRIVATE sound_stubs voice_stubs ../main)
+target_compile_options(test_buddy_sound PRIVATE -Wall -Wextra -Werror)
+add_test(NAME buddy_sound COMMAND test_buddy_sound)
+add_executable(test_buddy_voice test_buddy_voice.c ../main/buddy_voice.c ../main/buddy_adpcm.c)
+target_include_directories(test_buddy_voice PRIVATE voice_stubs ../main)
+target_compile_options(test_buddy_voice PRIVATE -Wall -Wextra -Werror)
+add_test(NAME buddy_voice COMMAND test_buddy_voice)
+add_executable(test_buddy_adpcm test_buddy_adpcm.c ../main/buddy_adpcm.c)
+target_include_directories(test_buddy_adpcm PRIVATE ../main)
+target_compile_options(test_buddy_adpcm PRIVATE -Wall -Wextra -Werror)
+add_test(NAME buddy_adpcm COMMAND test_buddy_adpcm)
 
 add_executable(test_buddy_alert test_buddy_alert.c ../main/buddy_alert.c)
 target_include_directories(test_buddy_alert PRIVATE ../main)
@@ -19,6 +31,12 @@ endif()
 
 set(BUDDY_CJSON_DIR "$ENV{IDF_PATH}/components/json/cJSON")
 set(BUDDY_CJSON_SOURCE "${BUDDY_CJSON_DIR}/cJSON.c")
+
+add_executable(test_buddy_lan_filter test_buddy_lan_filter.c ../main/buddy_lan_filter.c
+               ../main/buddy_protocol.c ${BUDDY_CJSON_SOURCE})
+target_include_directories(test_buddy_lan_filter PRIVATE ../main ${BUDDY_CJSON_DIR})
+target_compile_options(test_buddy_lan_filter PRIVATE -Wall -Wextra -Werror)
+add_test(NAME buddy_lan_filter COMMAND test_buddy_lan_filter)
 
 add_executable(test_buddy_state test_buddy_state.c ../main/buddy_state.c
                ../main/buddy_protocol.c ${BUDDY_CJSON_SOURCE})

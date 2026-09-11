@@ -13,13 +13,18 @@ idf_component_register(
         "buddy_usage.c"
         "buddy_alert.c"
         "buddy_sound.c"
+        "buddy_voice.c"
+        "buddy_adpcm.c"
+        "buddy_lan.c"
+        "buddy_lan_filter.c"
         "buddy_font_zh_14.c"
         "buddy_font_zh_16.c"
         "buddy_i4.c"
         "buddy_sprite.c"
         "buddy_text_layout.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp bt esp_hw_support esp_timer json nvs_flash
+    REQUIRES bsp bt esp_hw_support esp_timer json nvs_flash esp_wifi esp_netif esp_event lwip mbedtls esp_http_server
+    EMBED_TXTFILES "lan_setup.html"
 )
 
 # ESP-IDF 5.5.3 only applies WRITE_ENC to generated CCCDs. Wrap the private
