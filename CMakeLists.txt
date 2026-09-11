@@ -8,5 +8,5 @@ idf_build_set_property(
     "${CMAKE_CURRENT_LIST_DIR}/bootloader_components/"
     APPEND)
 
-set(PROJECT_VER "0.2.0-lan")
+set(PROJECT_VER "0.2.1")
 project(FoloToy-AI-Passport)

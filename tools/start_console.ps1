@@ -25,6 +25,11 @@ try {
     } catch { }
     $venvPath = Join-Path $repoPath '.venv-console'
     $consolePython = Join-Path $venvPath 'Scripts\python.exe'
+    $portablePython = Join-Path $repoPath 'runtime\python.exe'
+    if (Test-Path -LiteralPath $portablePython) {
+        if (-not (Test-ConsolePython $portablePython)) { throw 'Bundled Python is damaged. Extract the release ZIP again.' }
+        $consolePython = $portablePython
+    }
     if (-not (Test-ConsolePython $consolePython)) {
         $candidates = @((Join-Path (Split-Path $repoPath -Parent) 'passport-venv\Scripts\python.exe'))
         if (Get-Command py -ErrorAction SilentlyContinue) {
@@ -62,7 +67,7 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'Doubao compatibility dependency installation failed.' }
         }
     }
-    $windowlessPython = Join-Path $venvPath 'Scripts\pythonw.exe'
+    $windowlessPython = Join-Path (Split-Path $consolePython -Parent) 'pythonw.exe'
     $entryPoint = Join-Path $PSScriptRoot 'run_console_windowless.py'
     $background = Start-Process -FilePath $windowlessPython -ArgumentList @(('"' + $entryPoint + '"')) -WindowStyle Hidden -PassThru
     for ($attempt = 0; $attempt -lt 30; $attempt++) {

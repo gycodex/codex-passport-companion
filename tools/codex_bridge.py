@@ -526,6 +526,11 @@ async def open_transport(args):
 
 
 async def bridge_loop(args: argparse.Namespace, control=None) -> None:
+    # Redirected Windows streams may otherwise use a legacy code page.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
     def report(kind, **data):
         if control is not None:
             control.report(kind, **data)

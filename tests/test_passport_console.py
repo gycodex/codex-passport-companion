@@ -75,12 +75,14 @@ class ConsoleTests(unittest.TestCase):
         native = root / "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex.exe"
         native.parent.mkdir(parents=True)
         native.touch()
+        native.chmod(0o700)
         with patch("passport_console.running_codex_paths", return_value=[]), patch("passport_console.sys.platform", "win32"), patch("passport_console.shutil.which", return_value=str(root / "npm/codex.cmd")), patch.dict("os.environ", {"APPDATA": str(root)}):
             self.assertEqual(find_codex(), str(native))
 
     def test_running_codex_takes_priority_over_path(self):
         native = Path(self.temp.name) / "codex.exe"
         native.touch()
+        native.chmod(0o700)
         with patch("passport_console.running_codex_paths", return_value=[str(native)]), patch("passport_console.shutil.which") as lookup:
             self.assertEqual(find_codex(), str(native))
             lookup.assert_not_called()

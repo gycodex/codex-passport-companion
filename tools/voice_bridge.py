@@ -354,10 +354,16 @@ async def voice_session(client, control):
     finally:
         if task:
             task.cancel()
+            async def join_child():
+                with suppress(asyncio.CancelledError):
+                    await task
+
+            cleanup = asyncio.create_task(join_child())
             try:
-                await task
+                await asyncio.shield(cleanup)
             except asyncio.CancelledError:
-                # Swallow the child's cancellation, never the caller's stop request.
-                current = asyncio.current_task()
-                if current is not None and current.cancelling():
-                    raise
+                # Only caller cancellation escapes the shield. Also works on Python 3.10.
+                cleanup.cancel()
+                with suppress(asyncio.CancelledError):
+                    await cleanup
+                raise

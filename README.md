@@ -9,7 +9,11 @@ writes a final answer. The top-right status area also shows the battery level.
 
 Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
 
-Current branch firmware version: **0.2.0-lan**.
+Current branch firmware version: **0.2.1**.
+
+**Download:** [v0.2.1 prerelease](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.1).
+Windows users can download the portable ZIP with Python, dependencies, firmware and the
+USB updater included. See [download and installation guide](docs/DOWNLOADS.md).
 
 The computer bridge recognizes `turn_aborted` session events: it retires only the matching
 turn and briefly displays **Task interrupted** on the home page for about six seconds.
