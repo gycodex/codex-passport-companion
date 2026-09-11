@@ -447,7 +447,6 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
         }
         else if (!s->reset_open && i == BUDDY_SETTINGS_WIFI) suffix = s->lan_mode ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_BLE) suffix = s->ble_enabled ? "开" : "关";
-        else if (!s->reset_open && i == BUDDY_SETTINGS_TRANSCRIPT) suffix = s->transcript_enabled ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_ASCII_PET) suffix = buddy_sprite_name(s->species);
         snprintf(row, sizeof(row), "%s", items[i]);
         if (active) box(layer, 12, y - 7, 216, 24, COL_ORANGE, COL_ORANGE, 0, 3);
@@ -459,8 +458,12 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
 
 static void draw_settings(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
 {
-    static const char *const settings[] = {"屏幕亮度", "声音", "自动睡眠", "蓝牙", "Wi-Fi", "无线网络", "指示灯", "任务记录", "时钟旋转", "伙伴形象", "重置", "返回"};
-    static const char *const reset[] = {"删除自定义角色", "恢复出厂设置", "解除蓝牙配对", "返回"};
+    static const char *const settings[] = {"屏幕亮度", "声音", "自动睡眠", "蓝牙", "Wi-Fi", "无线网络", "伙伴形象", "重置", "返回"};
+    static const char *const reset[] = {"恢复出厂设置", "解除蓝牙配对", "返回"};
+    _Static_assert(sizeof(settings) / sizeof(settings[0]) == BUDDY_SETTINGS_COUNT,
+                   "Settings labels must match navigation");
+    _Static_assert(sizeof(reset) / sizeof(reset[0]) == BUDDY_RESET_COUNT,
+                   "Reset labels must match navigation");
     draw_list(layer, s->reset_open ? "重置" : "设置", s->reset_open ? reset : settings,
               s->reset_open ? BUDDY_RESET_COUNT : BUDDY_SETTINGS_COUNT,
               s->reset_open ? s->reset_selection : s->settings_selection, s);

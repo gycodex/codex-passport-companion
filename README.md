@@ -105,6 +105,12 @@ it with `Ctrl+C`.
 
 ## Controls
 
+Settings exposes brightness, sound, auto sleep, Bluetooth, Wi-Fi, network setup,
+built-in pet selection, reset, and back. Reset retains factory reset and Bluetooth
+unpair, both with on-device confirmation, plus back. Nonfunctional LED, transcript,
+clock rotation, and custom-character deletion entries have been removed. This menu
+cleanup requires updated device firmware.
+
 - `UP`: cycle Home → Usage → Info.
 - `DOWN`: scroll or change the current sub-page.
 - Hold `OK`: open the menu.

@@ -66,9 +66,6 @@ typedef enum {
     BUDDY_SETTINGS_BLE,
     BUDDY_SETTINGS_WIFI,
     BUDDY_SETTINGS_NETWORK,
-    BUDDY_SETTINGS_LED,
-    BUDDY_SETTINGS_TRANSCRIPT,
-    BUDDY_SETTINGS_CLOCK_ROTATION,
     BUDDY_SETTINGS_ASCII_PET,
     BUDDY_SETTINGS_RESET,
     BUDDY_SETTINGS_BACK,
@@ -76,7 +73,6 @@ typedef enum {
 } buddy_settings_item_t;
 
 typedef enum {
-    BUDDY_RESET_DELETE_CHARACTER,
     BUDDY_RESET_FACTORY_RESET,
     BUDDY_RESET_UNPAIR,
     BUDDY_RESET_BACK,
@@ -298,7 +294,6 @@ typedef struct {
     uint8_t info_page;
     bool menu_open;
     bool reset_open;
-    bool transcript_enabled;
     bool screen_off;
     bool voice_ready, voice_recording;
     unsigned voice_seconds, voice_peak;

@@ -45,7 +45,6 @@ typedef struct {
     uint8_t info_page;
     bool menu_open;
     bool reset_open;
-    bool transcript_enabled;
     bool screen_off;
     bool screen_dimmed;
     bool voice_recording;

@@ -183,9 +183,6 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             } else if (state->reset_selection == BUDDY_RESET_BACK) {
                 state->reset_open = false;
                 buddy_set_ui_refresh(action);
-            } else {
-                buddy_copy(state->message, sizeof(state->message), "尚未安装自定义角色");
-                buddy_set_ui_refresh(action);
             }
         }
         return;
@@ -240,11 +237,6 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             action->ble_enabled = true;
         }
         break;
-    case BUDDY_SETTINGS_LED:
-    case BUDDY_SETTINGS_CLOCK_ROTATION:
-        buddy_copy(state->message, sizeof(state->message), "此硬件暂不支持该功能");
-        buddy_set_ui_refresh(action);
-        break;
     case BUDDY_SETTINGS_ASCII_PET:
         state->species = (uint8_t)((state->species + 1U) % 18U);
         buddy_set_ui_refresh(action);
@@ -256,13 +248,9 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             action->ble_enabled = state->settings.ble_enabled;
         }
         break;
-    case BUDDY_SETTINGS_TRANSCRIPT:
-        state->transcript_enabled = !state->transcript_enabled;
-        buddy_set_ui_refresh(action);
-        break;
     case BUDDY_SETTINGS_RESET:
         state->reset_open = true;
-        state->reset_selection = BUDDY_RESET_DELETE_CHARACTER;
+        state->reset_selection = BUDDY_RESET_FACTORY_RESET;
         buddy_set_ui_refresh(action);
         break;
     case BUDDY_SETTINGS_BACK:
@@ -527,7 +515,6 @@ void buddy_state_init(buddy_state_t *state, const buddy_settings_snapshot_t *set
     state->heartbeat_stale = true;
     state->brightness_level = 4;
     state->settings.sleep_mode = BUDDY_SLEEP_5_MIN;
-    state->transcript_enabled = true;
     if (settings != NULL) {
         state->settings = *settings;
         state->highest_celebrated_level = settings->highest_celebrated_level;
@@ -792,7 +779,6 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     snapshot->info_page = state->info_page;
     snapshot->menu_open = state->menu_open;
     snapshot->reset_open = state->reset_open;
-    snapshot->transcript_enabled = state->transcript_enabled;
     snapshot->brightness_level = state->brightness_level;
     snapshot->screen_off = state->screen_off;
     snapshot->species = state->species;
