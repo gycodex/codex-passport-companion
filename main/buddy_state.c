@@ -229,10 +229,16 @@ static void buddy_settings_click(buddy_state_t *state, buddy_key_t key,
             action->settings = state->settings;
         }
         break;
-    case BUDDY_SETTINGS_WIFI:
+    case BUDDY_SETTINGS_NETWORK:
         state->page = BUDDY_PAGE_INFO;
         state->info_page = 4;
         buddy_set_ui_refresh(action);
+        break;
+    case BUDDY_SETTINGS_WIFI:
+        if (action != NULL) {
+            action->type = state->lan_mode ? BUDDY_ACTION_BLE_TOGGLE : BUDDY_ACTION_LAN_ENABLE;
+            action->ble_enabled = true;
+        }
         break;
     case BUDDY_SETTINGS_LED:
     case BUDDY_SETTINGS_CLOCK_ROTATION:

@@ -44,7 +44,7 @@ static atomic_uint s_event_stack_free;
 static portMUX_TYPE s_ip_lock = portMUX_INITIALIZER_UNLOCKED;
 static char s_ip[16];
 static buddy_lan_receive_t s_receive;
-static bool s_loaded, s_configured;
+static bool s_loaded, s_configured, s_credentials;
 static const char *TAG = "buddy_lan";
 static bool s_setup;
 static char s_setup_password[13], s_setup_token[33];
@@ -129,6 +129,7 @@ bool buddy_lan_configured(void)
             size == sizeof(s_config) && s_config.magic == 0x4c414e31 &&
             s_config.ssid[0] && memchr(s_config.ssid, 0, sizeof(s_config.ssid)) &&
             memchr(s_config.password, 0, sizeof(s_config.password));
+        s_credentials = s_configured;
         uint8_t bluetooth = 0;
         (void)nvs_get_u8(nvs, "bluetooth", &bluetooth);
         if (bluetooth) s_configured = false;
@@ -136,6 +137,21 @@ bool buddy_lan_configured(void)
     }
     s_loaded = true;
     return s_configured;
+}
+bool buddy_lan_has_credentials(void)
+{
+    (void)buddy_lan_configured();
+    return s_credentials;
+}
+esp_err_t buddy_lan_select_bluetooth(bool enabled)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open("passport_lan", NVS_READWRITE, &nvs);
+    if (err != ESP_OK) return err;
+    err = nvs_set_u8(nvs, "bluetooth", enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_commit(nvs);
+    nvs_close(nvs);
+    return err;
 }
 esp_err_t buddy_lan_forget(void)
 {

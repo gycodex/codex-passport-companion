@@ -840,7 +840,7 @@ static void test_original_settings_surface_is_complete_and_bounded(void)
     buddy_action_t action = {0};
     buddy_event_t ok = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
 
-    assert(BUDDY_SETTINGS_COUNT == 11);
+    assert(BUDDY_SETTINGS_COUNT == 12);
     assert(BUDDY_RESET_COUNT == 4);
     buddy_state_init(&state, NULL);
     state.page = BUDDY_PAGE_SETTINGS;
@@ -1153,6 +1153,17 @@ static void test_wifi_setup_requires_explicit_local_click(void)
     state.settings_selection = BUDDY_SETTINGS_WIFI;
     buddy_event_t click = {.type=BUDDY_EVENT_KEY_CLICK, .key=BUDDY_KEY_OK};
     buddy_state_reduce(&state, &click, 1000, &action);
+    assert(state.page == BUDDY_PAGE_SETTINGS);
+    assert(action.type == BUDDY_ACTION_LAN_ENABLE);
+    state.lan_mode = true;
+    buddy_state_reduce(&state, &click, 1050, &action);
+    assert(action.type == BUDDY_ACTION_BLE_TOGGLE && action.ble_enabled);
+    state.settings_selection = BUDDY_SETTINGS_BLE;
+    state.settings.ble_enabled = false;
+    buddy_state_reduce(&state, &click, 1075, &action);
+    assert(action.type == BUDDY_ACTION_BLE_TOGGLE && action.ble_enabled);
+    state.settings_selection = BUDDY_SETTINGS_NETWORK;
+    buddy_state_reduce(&state, &click, 1090, &action);
     assert(state.page == BUDDY_PAGE_INFO && state.info_page == 4);
     assert(action.type != BUDDY_ACTION_LAN_SETUP);
     buddy_state_reduce(&state, &click, 1100, &action);

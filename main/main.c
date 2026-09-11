@@ -827,9 +827,14 @@ static esp_err_t buddy_orchestrator_set_ble(void *context, bool enabled)
 {
     if (s_lan_mode) {
         buddy_state_t *state = context;
+        if (enabled && buddy_settings_set_ble_enabled(true) == ESP_OK &&
+            buddy_settings_flush(true) == ESP_OK && buddy_lan_select_bluetooth(true) == ESP_OK) {
+            buddy_voice_disconnect();
+            esp_restart();
+        }
         state->settings.ble_enabled = false;
-        buddy_copy_text(state->message, sizeof(state->message), "Use USB --disable for BLE");
-        return ESP_ERR_INVALID_STATE;
+        buddy_copy_text(state->message, sizeof(state->message), "切换失败");
+        return ESP_FAIL;
     }
     return buddy_set_ble_enabled(context, enabled);
 }
@@ -892,6 +897,17 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
         voice_wifi_awake = false;
     }
     if (state->voice_recording) { state->screen_off = false; state->screen_dimmed = false; }
+    if (action->type == BUDDY_ACTION_LAN_ENABLE) {
+        esp_err_t err = buddy_settings_flush(true);
+        if (err == ESP_OK) err = buddy_lan_select_bluetooth(false);
+        if (err == ESP_OK && !buddy_lan_has_credentials()) err = buddy_lan_request_setup();
+        if (err == ESP_OK) {
+            buddy_voice_disconnect();
+            esp_restart();
+        }
+        buddy_copy_text(state->message, sizeof(state->message), "切换失败");
+        return false;
+    }
     if (action->type == BUDDY_ACTION_LAN_SETUP) {
         if (s_lan_setup || buddy_lan_request_setup() == ESP_OK) {
             (void)buddy_settings_flush(true);

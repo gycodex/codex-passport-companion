@@ -17,6 +17,8 @@ bool buddy_lan_usb_command(const char *line);
 esp_err_t buddy_lan_forget(void);
 bool buddy_lan_setup_requested(void);
 esp_err_t buddy_lan_request_setup(void);
+bool buddy_lan_has_credentials(void);
+esp_err_t buddy_lan_select_bluetooth(bool enabled);
 esp_err_t buddy_lan_start_setup(void);
 bool buddy_lan_setup_active(void);
 void buddy_lan_setup_password(char out[13]);
