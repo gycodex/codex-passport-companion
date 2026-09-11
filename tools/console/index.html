@@ -11,12 +11,12 @@
 <button id="voice-devices" type="button" class="secondary">刷新音频设备</button>
 <details><summary>快捷键与音频帮助</summary><p class="hint">Windows：安装 <a href="https://vb-audio.com/Cable/" target="_blank" rel="noreferrer">VB-CABLE</a>，这里选 CABLE Input，输入法的麦克风选 CABLE Output。Mac：使用 <a href="https://existential.audio/blackhole/" target="_blank" rel="noreferrer">BlackHole</a>，两边均选 BlackHole。</p>
 <label class="check"><input id="voice-doubao-compat" type="checkbox">启用 Windows 豆包兼容适配（实验性）</label>
-<p class="hint">适配会临时连接豆包进程，仅支持已验证的 Windows x64 版本。首次使用请阅读 <a href="https://github.com/gycodex/codex-passport-companion/blob/feature/lan-connection/docs/VOICE.md" target="_blank" rel="noreferrer">兼容说明</a>；保存后退出后台，使用 start-console-admin.cmd 启动。</p>
+<p class="hint">适配会临时连接豆包进程，仅支持已验证的 Windows x64 版本。首次使用请阅读 <a href="https://github.com/gycodex/codex-passport-companion/blob/feature/lan-connection/docs/VOICE.md" target="_blank" rel="noreferrer">兼容说明</a>。连接时如需权限，网页会引导授权并自动重连，无需手动重启。</p>
 <label class="check"><input id="voice-hotkeys" type="checkbox" checked>设备录音时自动触发输入法快捷键</label>
 <label>开始快捷键<input id="voice-start-key" placeholder="例如 f6、右Alt 或 ctrl+alt+space" value="f6"></label>
 <label>结束快捷键<input id="voice-stop-key" placeholder="例如 f6" value="f6"></label>
 <p class="hint">豆包使用左 Alt＋V（免按模式），讯飞使用 F6；请与输入法设置保持一致。</p>
 </details>
 <p class="hint">点击目标输入框，在设备首页短按下键开始／结束说话，最长 2 分钟。</p>
-</details><label class="check"><input id="autoconnect" type="checkbox"> 启动控制台时自动连接</label><div class="actions"><button id="connect" type="submit">保存并连接 ↗</button><button id="save" type="button" class="secondary">保存</button><button id="disconnect" type="button" class="secondary" hidden>断开连接</button></div></form><p id="notice" role="status">准备好了，随时可以连接。</p></section></div>
-<details class="journal card"><summary>活动日志</summary><ol id="logs"><li>暂无活动记录。</li></ol></details><footer><button id="exit-console" type="button" class="secondary">退出后台</button><span>关闭网页后，后台桥接仍会继续运行。</span><span>蓝牙 + 局域网 · 同一设备同时只连接一台电脑</span></footer></main><script src="/app.js"></script></body></html>
+</details><label class="check"><input id="autoconnect" type="checkbox"> 启动控制台时自动连接</label><div class="actions"><button id="connect" type="submit">保存并连接 ↗</button><button id="save" type="button" class="secondary">保存</button><button id="disconnect" type="button" class="secondary" hidden>断开连接</button></div></form><button id="authorize" type="button" hidden>授权并连接</button><p id="notice" role="status">准备好了，随时可以连接。</p></section></div>
+<details class="journal card"><summary>活动日志</summary><ol id="logs"><li>暂无活动记录。</li></ol></details><footer><button id="exit-console" type="button" class="secondary">退出</button><span>关闭网页后，后台桥接仍会继续运行。</span><span>蓝牙 + 局域网 · 同一设备同时只连接一台电脑</span></footer></main><script src="/app.js"></script></body></html>

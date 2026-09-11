@@ -52,6 +52,24 @@ class ConsoleTests(unittest.TestCase):
         self.assertNotIn(key, json.dumps(snapshot))
         self.assertEqual(json.loads((Path(self.temp.name) / "pairing.json").read_text())["key"], key)
 
+    def test_authorization_requires_token_and_deduplicates_launch(self):
+        with patch('console_setup.needs_setup', return_value=True), patch('console_setup.launch') as launch:
+            self.assertEqual(self.request('/api/authorize', {})[0], 403)
+            launch.assert_not_called()
+            headers = {'X-Passport-Token': self.server.token}
+            for _ in range(2):
+                code, body = self.request('/api/authorize', {}, **headers)
+                self.assertEqual(code, 200)
+                self.assertTrue(json.loads(body)['restarting'])
+            launch.assert_called_once()
+
+    def test_exit_disconnects_before_acknowledging(self):
+        with patch.object(self.controller, 'submit', wraps=self.controller.submit) as submit:
+            code, _ = self.request('/api/exit', {}, **{'X-Passport-Token': self.server.token})
+            self.assertEqual(code, 200)
+            submit.assert_called_once_with('disconnect', {})
+            self.assertEqual(self.controller.snapshot()['status'], 'disconnected')
+
     def test_windows_npm_launcher_resolves_to_native_executable(self):
         root = Path(self.temp.name)
         native = root / "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex.exe"

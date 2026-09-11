@@ -182,6 +182,9 @@ class Controller:
             if self.task and not self.task.done():
                 return {"ok": True}
             cfg = dict(self.config)
+            from console_setup import needs_setup
+            if needs_setup(cfg):
+                return {"ok": True, "needs_authorization": True}
             if cfg["mode"] == "lan" and (not cfg["host"] or not (self.directory / "pairing.json").exists()):
                 raise ValueError("Enter device IP and import pairing file first")
             args = argparse.Namespace(lan=cfg["host"] if cfg["mode"] == "lan" else None,
@@ -260,6 +263,8 @@ class Server(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), Handler)
         self.controller = controller
         self.token = secrets.token_urlsafe(32)
+        self.setup_lock = threading.Lock()
+        self.setup_started = 0
         self.hosts = {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
 
 
@@ -291,6 +296,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {"error": "Forbidden"})
         if self.path == "/api/status":
             return self.reply(200, self.server.controller.snapshot())
+        if self.path == "/api/setup":
+            path = self.server.controller.directory / 'setup-result.json'
+            try:
+                result = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                result = {"message": "正在等待 Windows 授权…"}
+            return self.reply(200, result)
         if self.path == "/health":
             return self.reply(200, {"app": "passport-companion-console"})
         assets = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/style.css": ("style.css", "text/css")}
@@ -312,9 +324,26 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict) or not self.path.startswith("/api/"):
                 raise ValueError("Invalid request")
             if self.path == "/api/exit":
+                self.server.controller.submit("disconnect", {})
                 self.reply(200, {"ok": True})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
+            if self.path == "/api/authorize":
+                from console_setup import launch, needs_setup
+                if not needs_setup(self.server.controller.config):
+                    return self.reply(200, self.server.controller.submit("connect", {}))
+                with self.server.setup_lock:
+                    path = self.server.controller.directory / 'setup-result.json'
+                    try:
+                        failed = '失败' in json.loads(path.read_text(encoding='utf-8')).get('message', '')
+                    except (OSError, ValueError):
+                        failed = False
+                    if self.server.setup_started and time.monotonic() - self.server.setup_started < 240 and not failed:
+                        return self.reply(200, {"restarting": True})
+                    atomic_json(path, {"message": "正在等待 Windows 授权…"})
+                    launch(self.server.server_port, self.server.controller.directory, self.server.token)
+                    self.server.setup_started = time.monotonic()
+                return self.reply(200, {"restarting": True})
             result = self.server.controller.submit(self.path[5:], data)
             self.reply(200, result)
         except ValueError as error:
@@ -327,6 +356,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--connect", action="store_true")
     parser.add_argument("--config-dir", type=Path, default=Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "passport-console")
     args = parser.parse_args()
     controller = Controller(args.config_dir)
@@ -349,7 +379,7 @@ def main():
     print(f"Passport console: {url}", flush=True)
     if not args.no_browser:
         webbrowser.open(url)
-    if controller.config["autoconnect"]:
+    if controller.config["autoconnect"] or args.connect:
         try:
             controller.submit("connect", {})
         except ValueError as error:

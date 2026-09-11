@@ -28,7 +28,7 @@ function localize(message) {
 }
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name="passport-token"]').content;
-let initialized = false, pairing = null, busy = false, exited = false;
+let initialized = false, pairing = null, busy = false, exited = false, restarting = false;
 async function api(action, data) {
   const response = await fetch('/api/' + action, {method:data === undefined?'GET':'POST',headers:{'X-Passport-Token':token,'Content-Type':'application/json'},body:data === undefined?undefined:JSON.stringify(data)});
   const result = await response.json();
@@ -43,7 +43,7 @@ function configuration() { const cfg={mode:mode(),host:$('host').value,device:$(
 async function operation(work) { if(busy)return;busy=true;try{await work();if(!exited)await refresh();}catch(error){notice(localize(error.message),true);}finally{busy=false;} }
 $('pairing').addEventListener('change',async()=>{try{const file=$('pairing').files[0];if(!file)return;if(file.size>65536)throw new Error('配对文件过大');const value=JSON.parse(await file.text());if(!/^[0-9a-f]{64}$/i.test(value.key||''))throw new Error('配对文件格式不正确');pairing={key:value.key};$('key-state').textContent='待保存';notice('配对文件已载入，点击保存即可留在本机。');}catch(error){pairing=null;notice(localize(error.message),true);}});
 async function save(){await api('save',configuration());pairing=null;$('pairing').value='';notice('设置已保存。');}
-$('settings').addEventListener('submit',event=>{event.preventDefault();operation(async()=>{await save();await api('connect',{});notice('正在连接… 首次蓝牙配对可能会弹出系统配对窗口。');});});
+$('settings').addEventListener('submit',event=>{event.preventDefault();operation(async()=>{await save();const result=await api('connect',{});$('authorize').hidden=!result.needs_authorization;notice(result.needs_authorization?'豆包需要额外权限，请点击“授权并连接”，在 Windows 弹窗中确认。':'正在连接… 首次蓝牙配对可能会弹出系统配对窗口。');});});
 $('save').onclick=()=>operation(save);
 $('disconnect').onclick=()=>operation(async()=>{await api('disconnect',{});notice('已断开连接，设置已保留，下次可直接连接。');});
 $('test').onclick=()=>operation(async()=>{await api('test',{});notice('完成提醒已排队，请查看活动日志确认发送结果。');});
@@ -59,11 +59,29 @@ const voice=state.voice||{}; const voiceLabels={off:'语音输入未启用',read
 $('voice-status').textContent=voiceLabels[voice.status]||(state.config.voice_enabled?'语音输入将在连接后就绪':'语音输入未启用');
 $('voice-meter').hidden=voice.status!=='recording';$('voice-meter').value=voice.peak||0;
 const active=['starting','connecting','connected','retrying','stopping'].includes(state.status),connected=state.status==='connected';$('badge').textContent=(statusLabels[state.status] || '状态未知');$('pet').classList.toggle('awake',connected);$('activity').textContent=connected?(state.running?'正在陪你完成任务':'随时迎接下一个灵感'):(active?'正在寻找小伙伴…':'正在休息一会儿');$('detail').textContent=connected?'设备正在接收实时状态更新。':(active?'请检查设备模式、IP 地址，以及是否有其他电脑正在连接。':'连接设备，让小伙伴上线陪你。');$('tasks').textContent=connected?state.running:'—';$('sync').textContent=state.synced_at?new Date(state.synced_at*1000).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}):'—';$('test').disabled=!connected;$('connect').hidden=active;$('save').hidden=active;$('disconnect').hidden=!active;for(const input of document.querySelectorAll('#settings input, #settings select, #scan, #voice-devices'))input.disabled=active;$('key-state').textContent=pairing?'待保存':state.key_present?'✓ 配对密钥已保存在本机':'尚未保存配对密钥';$('usage').replaceChildren();for(const key of ['primary','secondary']){const w=state.usage[key];if(!w||!w.duration)continue;const remaining=Math.max(0,Math.min(100,100-w.used));const row=document.createElement('p');const label=document.createElement('span');label.textContent=w.duration>=1440?`${w.duration/1440} 天`:`${w.duration/60} 小时`;const value=document.createElement('span');value.textContent=`剩余 ${Math.round(remaining)}%`;row.append(label,value);const bar=document.createElement('progress');bar.max=100;bar.value=remaining;$('usage').append(row,bar);}$('logs').replaceChildren();for(const entry of state.logs.slice().reverse()){const li=document.createElement('li'),time=document.createElement('time');time.textContent=new Date(entry.at*1000).toLocaleTimeString('zh-CN');li.append(time,document.createTextNode(localize(entry.message)));$('logs').append(li);}}
-async function poll(){if(exited)return;try{await refresh();}catch(error){notice('无法连接本机控制台，请重新运行启动程序。',true);}setTimeout(poll,2000);}poll();
+async function poll(){if(exited)return;if(restarting){setTimeout(poll,2000);return;}try{await refresh();}catch(error){notice('无法连接本机控制台，请重新运行启动程序。',true);}setTimeout(poll,2000);}poll();
 
-$('exit-console').onclick=()=>operation(async()=>{await api('exit',{});exited=true;notice('后台已退出，设备连接已断开，可以关闭网页。');});
+$('exit-console').onclick=()=>operation(async()=>{await api('exit',{});exited=true;document.querySelectorAll('button,input,select').forEach(el=>el.disabled=true);notice('后台已退出，设备已断开。如果页面未自动关闭，可以手动关闭此页。');window.close();});
 
 $('codex-auto').onchange=()=>{$('codex-manual').hidden=$('codex-auto').checked;};
 
 $('voice-devices').onclick=()=>operation(async()=>{const previous=$('voice-output').value;const result=await api('voice_devices',{});$('voice-output').replaceChildren(new Option('请选择虚拟音频设备',''),new Option('仅测试麦克风（不传给输入法）','meter'));for(const d of result.devices)$('voice-output').append(new Option(d.name+' · '+d.api,d.id));if(previous==='meter'||result.devices.some(d=>d.id===previous))$('voice-output').value=previous;else if(result.devices.length)$('voice-output').value=result.devices[0].id;notice(result.devices.length?'已找到虚拟音频设备，请确认输入法的麦克风也已选好。':'未检测到虚拟音频线，请先安装 VB-CABLE（Windows）或 BlackHole（Mac），再刷新。');});
-$('voice-ime').onchange=()=>{const preset={xunfei:'f6',doubao:'alt+v'}[$('voice-ime').value]||'';$('voice-start-key').value=preset;$('voice-stop-key').value=preset;notice(preset?'已填入快捷键预设，请确认与输入法设置一致，再保存并连接。':'请填写所选输入法的开始和结束快捷键。');};
+$('voice-ime').onchange=()=>{$('voice-doubao-compat').checked=$('voice-ime').value==='doubao';const preset={xunfei:'f6',doubao:'alt+v'}[$('voice-ime').value]||'';$('voice-start-key').value=preset;$('voice-stop-key').value=preset;notice(preset?'已填入快捷键预设，请确认与输入法设置一致，再保存并连接。':'请填写所选输入法的开始和结束快捷键。');};
+
+$('authorize').onclick=()=>operation(async()=>{
+  restarting=true;
+  try {
+    notice('请在 Windows 授权窗口中确认，随后自动准备并重新连接…');
+    const result=await api('authorize',{});
+    if(!result.restarting){restarting=false;$('authorize').hidden=true;return;}
+    for(let i=0;i<240;i++){
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      try{
+        const response=await fetch('/api/setup',{headers:{'X-Passport-Token':token}});
+        if(response.status===403){location.reload();return;}
+        if(response.ok){const state=await response.json();notice(state.message);if(state.message.includes('失败'))throw new Error(state.message);}
+      }catch(error){if(error.message.includes('失败'))throw error;}
+    }
+    throw new Error('授权切换尚未完成，请刷新页面检查或重试；后台日志位于本机配置目录。');
+  }finally{restarting=false;}
+});
