@@ -8,9 +8,9 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 窗口名称按实际分钟数生成；没有返回的窗口不会显示，也不会被当作剩余 100%。
 
-当前分支固件版本：**0.2.1**。
+当前分支固件版本：**0.2.2**。
 
-**直接下载：**[v0.2.1 预发布版](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.1)。Windows 一体包包含 Python、依赖、固件与 USB 刷机工具；另提供固件精简包和 macOS/Linux 启动脚本包。详见[下载与安装](docs/DOWNLOADS.md)。
+**直接下载：**[v0.2.2 预发布版](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2)。Windows 一体包包含 Python、依赖、固件与 USB 刷机工具；另提供固件精简包和 macOS/Linux 启动脚本包。详见[下载与安装](docs/DOWNLOADS.md)。
 
 电脑桥接现在识别日志中的 `turn_aborted`：仅结束对应轮次的运行计数，在首页短暂显示约 6 秒的 `Task interrupted`，不增加完成计数、不触发完成庆祝或提示音。其他任务仍可继续运行；同批有任务完成时，优先显示完成提醒。桥接启动或重新连接时不会补播旧中断。此功能复用现有状态文字，无需重刷固件；更新后重启电脑端桥接生效。等待输入、等待审批和任务失败尚未接入，不能从单次工具报错推断整个任务失败。
 

@@ -1,6 +1,6 @@
 # Release review — 2026-09-11
 
-v0.2.1 is packaged as a prerelease, not a declaration of completed hardware acceptance.
+v0.2.2 is packaged as a prerelease, not a declaration of completed hardware acceptance.
 Download instructions and package boundaries are in [DOWNLOADS.md](DOWNLOADS.md).
 
 ## Remaining work before a stable release

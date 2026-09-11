@@ -1,4 +1,4 @@
-# v0.2.1 下载与安装
+# v0.2.2 下载与安装
 
 这是预发布版。仅适用于 FoloToy AI Passport（ESP32-C3、8 MB Flash）。
 
@@ -6,9 +6,9 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `passport-windows-x64-v0.2.1.zip` | Windows 10/11 x64 推荐。含电脑控制台、独立 Python 运行时、依赖、固件和刷机工具；无需另装 Python |
-| `passport-desktop-source-v0.2.1.zip` | macOS/Linux 或自行管理 Python 的用户。需要 Python 3.10+；首次启动联网安装依赖 |
-| `passport-firmware-v0.2.1.zip` | 固件与刷机脚本。已下载 Windows 包的用户无需重复下载 |
+| `passport-windows-x64-v0.2.2.zip` | Windows 10/11 x64 推荐。含电脑控制台、独立 Python 运行时、依赖、固件和刷机工具；无需另装 Python |
+| `passport-desktop-source-v0.2.2.zip` | macOS/Linux 或自行管理 Python 的用户。需要 Python 3.10+；首次启动联网安装依赖 |
+| `passport-firmware-v0.2.2.zip` | 固件与刷机脚本。已下载 Windows 包的用户无需重复下载 |
 | `SHA256SUMS.txt` | 三个下载包的 SHA-256 校验值 |
 
 先完整解压，不要直接在压缩包内运行程序。解压到普通可写目录，保留所有子目录。
@@ -59,4 +59,4 @@ Windows 固件精简包不含运行时，可安装 Python 3.10+，执行
 - 不是完成全部硬件验收的稳定版；第二台电脑、macOS、20 次重连和 30 分钟压力测试仍有未验证项。
 - 许可范围与上游授权待确认事项见 `NOTICE`，不能将整个分发包统一宣称为 MIT。
 
-发布页：https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.1
+发布页：https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2
