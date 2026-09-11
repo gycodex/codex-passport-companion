@@ -40,6 +40,22 @@ static esp_err_t tone(unsigned frequency, unsigned frames)
     return ESP_OK;
 }
 
+static esp_err_t voice_cue(bool starting)
+{
+    bsp_audio_set_volume(80);
+    esp_err_t err = tone(starting ? 1040 : 660, 1280);
+    /* Flush the 90 ms TX DMA queue before muting. RX is drained separately
+     * before capture so the start cue cannot enter the dictated audio. */
+    if (err == ESP_OK) err = tone(0, 1600);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    bsp_audio_set_volume(0);
+    if (err == ESP_OK) {
+        atomic_fetch_add(&s_play_count, 1);
+        ESP_LOGI(TAG, "Voice %s chime played", starting ? "start" : "stop");
+    }
+    return err;
+}
+
 static void sound_worker(void *context)
 {
     (void)context;
@@ -49,7 +65,8 @@ static void sound_worker(void *context)
     int64_t last_completion = -2000000;
     for (;;) {
         uint32_t pending = 0;
-        (void)xTaskNotifyWait(0, UINT32_MAX, &pending, buddy_voice_recording() ? 0 : portMAX_DELAY);
+        (void)xTaskNotifyWait(0, UINT32_MAX, &pending,
+                              (capturing || buddy_voice_recording()) ? 0 : portMAX_DELAY);
         if (failed) { buddy_voice_stop(); continue; }
         esp_err_t err = ESP_OK;
         if (!initialized) {
@@ -62,7 +79,7 @@ static void sound_worker(void *context)
         if (err == ESP_OK && buddy_voice_recording()) {
             int16_t pcm[BUDDY_VOICE_SAMPLES];
             if (!capturing) {
-                bsp_audio_set_volume(0);
+                err = voice_cue(true);
                 /* Drain old RX DMA samples before beginning this physical-button take. */
                 for (unsigned i = 0; i < 5 && err == ESP_OK; ++i) err = bsp_audio_read(pcm, sizeof(pcm));
                 capturing = true;
@@ -70,8 +87,9 @@ static void sound_worker(void *context)
             if (err == ESP_OK) err = bsp_audio_read(pcm, sizeof(pcm));
             if (err == ESP_OK) buddy_voice_capture(pcm);
             else buddy_voice_stop();
-            continue;
+            if (err == ESP_OK) continue;
         }
+        if (capturing && err == ESP_OK) err = voice_cue(false);
         capturing = false;
         if (err == ESP_OK && !(pending & (SOUND_CONNECTED | SOUND_COMPLETED))) continue;
         if ((pending & SOUND_COMPLETED) && esp_timer_get_time() - last_completion < 2000000) continue;
