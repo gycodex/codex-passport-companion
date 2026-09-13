@@ -1245,6 +1245,14 @@ static void buddy_screenshot_task(void *context)
             memset(request, 0, sizeof(request));
             continue;
         }
+        if (strcmp(request, "FAP_UI_STATUS_V1") == 0) {
+            if (bsp_lvgl_lock(1000)) {
+                (void)buddy_ui_write_status(stdout);
+                bsp_lvgl_unlock();
+            }
+            memset(request, 0, sizeof(request));
+            continue;
+        }
         if (strcmp(request, "FAP_SCREENSHOT_V1") != 0) {
             memset(request, 0, sizeof(request));
             continue;

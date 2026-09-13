@@ -22,8 +22,10 @@ static esp_err_t i2s_full_duplex_init(void) {
     i2s_chan_config_t chan = {
         .id = BSP_I2S_PORT,
         .role = I2S_ROLE_MASTER,
-        .dma_desc_num = 6,
-        .dma_frame_num = 240,
+        // 40 ms per direction at 16 kHz. The former 90 ms stereo buffers
+        // exhausted DMA-capable RAM when Wi-Fi, display and discovery coexist.
+        .dma_desc_num = 4,
+        .dma_frame_num = 160,
         .auto_clear_after_cb = true,
         .auto_clear_before_cb = false,
         .intr_priority = 0,

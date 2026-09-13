@@ -15,3 +15,5 @@ void buddy_ui_scroll(int delta);
 
 /* Write the current 240x320 canvas using the community capture protocol. */
 bool buddy_ui_write_screenshot(FILE *stream);
+/* Bounded diagnostics; excludes names, credentials and approval identifiers. */
+bool buddy_ui_write_status(FILE *stream);

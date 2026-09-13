@@ -338,3 +338,38 @@ class CodexBridgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SessionFreshnessTests(unittest.TestCase):
+    def test_recent_records_override_stale_windows_mtime(self):
+        import os
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory); path=home/'sessions'/'live.jsonl';path.parent.mkdir()
+            path.write_text(json.dumps({'timestamp':datetime.now(timezone.utc).isoformat(),
+                'type':'event_msg','payload':{'type':'task_started','turn_id':'live'}})+'\n',encoding='utf-8')
+            os.utime(path,(1,1))
+            watcher=codex_bridge.SessionWatcher(home)
+            self.assertEqual(watcher.running_count,1)
+            self.assertEqual(watcher.completion_sequence,0)
+
+    def test_old_abandoned_session_stays_inactive(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory);path=home/'sessions'/'old.jsonl';path.parent.mkdir()
+            path.write_text(json.dumps({'timestamp':'2000-01-01T00:00:00Z',
+                'type':'event_msg','payload':{'type':'task_started','turn_id':'old'}})+'\n',encoding='utf-8')
+            os.utime(path,(1,1))
+            self.assertEqual(codex_bridge.SessionWatcher(home).running_count,0)
+
+    def test_recent_completion_is_not_replayed_on_restart(self):
+        import os
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory);path=home/'sessions'/'done.jsonl';path.parent.mkdir()
+            stamp=datetime.now(timezone.utc).isoformat()
+            path.write_text(''.join(json.dumps({'timestamp':stamp,'type':'event_msg',
+                'payload':{'type':kind,'turn_id':'done'}})+'\n' for kind in ['task_started','task_complete']),encoding='utf-8')
+            os.utime(path,(1,1))
+            watcher=codex_bridge.SessionWatcher(home)
+            self.assertEqual(watcher.running_count,0)
+            self.assertEqual(watcher.completion_sequence,0)

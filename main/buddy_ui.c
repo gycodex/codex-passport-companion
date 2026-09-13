@@ -611,6 +611,20 @@ void buddy_ui_scroll(int delta)
     redraw();
 }
 
+bool buddy_ui_write_status(FILE *stream)
+{
+    if (stream == NULL || !s_have_snapshot) return false;
+    return fprintf(stream, "FAP_UI {\"running\":%u,\"completion_seq\":%llu,"
+                   "\"stale\":%s,\"screen_off\":%s,\"page\":%u,"
+                   "\"sound_mode\":%u,\"character\":%u}\n",
+                   s_snapshot.running,
+                   (unsigned long long)s_snapshot.codex_usage.completion_sequence,
+                   s_snapshot.heartbeat_stale ? "true" : "false",
+                   s_snapshot.screen_off ? "true" : "false",
+                   (unsigned)s_snapshot.page, (unsigned)s_snapshot.sound_mode,
+                   (unsigned)s_snapshot.character) > 0 && fflush(stream) == 0;
+}
+
 bool buddy_ui_write_screenshot(FILE *stream)
 {
     uint8_t row[UI_W * 2U];

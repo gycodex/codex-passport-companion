@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime
 import asyncio
 import json
 import os
@@ -274,7 +275,7 @@ class SessionWatcher:
                 stat = path.stat()
                 self.offsets[path] = stat.st_size
                 self._read_thread_id(path)
-                if stat.st_mtime >= recent_cutoff:
+                if stat.st_mtime >= recent_cutoff or self._has_recent_record(path, recent_cutoff):
                     self._prime(path)
             except OSError:
                 pass
@@ -282,6 +283,30 @@ class SessionWatcher:
     @property
     def interrupted(self) -> bool:
         return time.monotonic() < self.interrupted_until
+
+    @staticmethod
+    def _has_recent_record(path: Path, cutoff: float) -> bool:
+        # Windows may retain an old mtime while Codex keeps its writer open.
+        # Inspect only a bounded tail, without treating old abandoned turns as live.
+        with path.open("rb") as stream:
+            stream.seek(0, 2)
+            start = max(0, stream.tell() - 65536)
+            stream.seek(start)
+            if start:
+                stream.readline(65536)
+            lines = stream.read(65536).splitlines()
+        for raw in reversed(lines):
+            try:
+                record = json.loads(raw)
+                stamp = record.get("timestamp") if isinstance(record, dict) else None
+                if not isinstance(stamp, str):
+                    continue
+                date = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if date.tzinfo is not None:
+                    return date.timestamp() >= cutoff
+            except (ValueError, UnicodeError):
+                continue
+        return False
 
     @property
     def running_count(self) -> int:
