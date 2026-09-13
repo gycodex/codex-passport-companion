@@ -53,7 +53,8 @@ def main():
         print(f"{port.device}: {port.description}")
     if args.list:
         return
-    folder = Path(__file__).resolve().parents[1] / "firmware"
+    root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
+    folder = root / "firmware"
     manifest = validate_bundle(folder)
     if not args.port:
         candidates = [p.device for p in ports if p.vid == 0x303A and p.pid == 0x1001]
@@ -61,16 +62,17 @@ def main():
     if args.port not in [p.device for p in ports]:
         raise ValueError("Choose a connected serial port from the list above")
     print(f"AI Passport ESP32-C3 / {manifest['version']} / {args.port}")
-    print("Close the computer bridge and any serial monitors before continuing.")
-    print("The current application is backed up before updating. Wi-Fi, bonds and recovery are preserved.")
-    if not args.check_only and not args.yes and input("Type FLASH to continue: ").strip() != "FLASH":
+    print("请先退出 Passport 电脑程序和串口监视器。")
+    print("升级前自动备份原固件；保留 Wi-Fi、配对信息和恢复分区。")
+    if not args.check_only and not args.yes and input("确认设备后，输入 FLASH 并回车开始升级：").strip() != "FLASH":
         print("Cancelled.")
         return
     backup = folder.parent / "backups" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup.mkdir(parents=True, exist_ok=False)
     def command(*arguments):
         with (backup / "flash.log").open("a", encoding="utf-8") as log:
-            result = subprocess.run([sys.executable, "-m", "esptool", "--chip", "esp32c3",
+            prefix = [sys.executable, "--esptool"] if getattr(sys, "frozen", False) else [sys.executable, "-m", "esptool"]
+            result = subprocess.run([*prefix, "--chip", "esp32c3",
                 "--port", args.port, "--baud", "460800", "--after", "no_reset", *arguments],
                 stdout=log, stderr=subprocess.STDOUT,
                 **({"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}))
@@ -97,9 +99,19 @@ def main():
         reset_device(args.port)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and getattr(sys, "frozen", False) and sys.argv[1:2] == ["--esptool"]:
+    import esptool
+    esptool.main(sys.argv[2:])
+elif __name__ == "__main__":
+    interactive = getattr(sys, "frozen", False) and len(sys.argv) == 1
     try:
         main()
     except (Exception, KeyboardInterrupt) as error:
         print("Update stopped: " + str(error), file=sys.stderr)
         sys.exit(1)
+    finally:
+        if interactive:
+            try:
+                input("\n操作已结束，按回车关闭窗口。")
+            except EOFError:
+                pass

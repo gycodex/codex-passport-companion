@@ -1,3 +1,4 @@
 -r requirements-desktop.txt
 -r requirements-doubao.txt
 pyinstaller==6.22.2
+esptool==4.12.0

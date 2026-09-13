@@ -1,75 +1,42 @@
-# 下载与安装
+# v0.2.4 下载与安装
 
-## v0.2.3 源码与构建
+**推荐普通 Windows 用户下载 [Passport-Windows-x64-v0.2.4.zip](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.4/Passport-Windows-x64-v0.2.4.zip)**，不要选页面自动生成的 Source code。
 
-v0.2.3 新增单文件 EXE、桌面窗口与托盘、首次使用引导，以及无需传递文件的局域网自动配对。
-本次创建源码 tag，尚未上传 v0.2.3 Release 下载附件；下方 v0.2.2 链接仍指向旧版。
-构建新版见 [桌面版说明](DESKTOP.md)，升级变化见 [v0.2.3 更新说明](releases/v0.2.3.md)。
-EXE 压缩包与带刷机工具的 Windows 一体包是不同产物：单文件 EXE 包不包含固件或刷机工具。
-EXE 内置 Frida 17.18.0 用于可选豆包兼容功能，不捆绑 Codex、输入法或虚拟音频驱动。
-自动配对需要同时升级固件，旧版文件导入保留在兼容入口。
+[发布页](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.4) · [三步上手](QUICKSTART.zh_CN.md) · [版本说明](releases/v0.2.4.md)
 
-## 此前已发布：v0.2.2
+这是预发布版，适用于 Windows 10/11 x64、FoloToy AI Passport（ESP32-C3、8 MB Flash）。
 
-这是预发布版。仅适用于 FoloToy AI Passport（ESP32-C3、8 MB Flash）。
-
-下列文件与启动说明针对 v0.2.2，不能用于判断 v0.2.3 自动配对是否可用。
-
-## 下载哪个文件
+## 包内有什么
 
 | 文件 | 用途 |
 | --- | --- |
-| `passport-windows-x64-v0.2.2.zip` | Windows 10/11 x64 推荐。含电脑控制台、独立 Python 运行时、依赖、固件和刷机工具；无需另装 Python |
-| `passport-desktop-source-v0.2.2.zip` | macOS/Linux 或自行管理 Python 的用户。需要 Python 3.10+；首次启动联网安装依赖 |
-| `passport-firmware-v0.2.2.zip` | 固件与刷机脚本。已下载 Windows 包的用户无需重复下载 |
-| `SHA256SUMS.txt` | 三个下载包的 SHA-256 校验值 |
+| `Passport.exe` | 双击打开电脑端，不需要 Python |
+| `升级设备固件.exe` | USB 升级工具，不需要 Python 或手写刷机命令 |
+| `firmware/` | 配套固件和校验信息，请保留完整目录 |
+| `先读我-三步开始.md` | 首次安装、联网、配对、日常使用说明 |
+| `SHA256SUMS.txt`、`notices/` | 校验值、构建来源和第三方许可 |
 
-先完整解压，不要直接在压缩包内运行程序。解压到普通可写目录，保留所有子目录。
+先完整解压到固定目录。首次安装或升级时，退出 Passport 并连接 USB，双击升级工具，核对设备后输入 FLASH。工具会验证分区、备份原应用、只更新 0x10000 应用分区并校验。不要整片擦除，也不要把应用写入 recovery 分区。
 
-## Windows：启动电脑端
+随后打开并登录 Codex，双击 Passport.exe。选择局域网，搜索设备并核对两端号码，即可自动保存配对；无需导入文件或填写 IP。详见[三步上手](QUICKSTART.zh_CN.md)。
 
-1. 启动并登录自己的 Codex 桌面应用或 CLI。此下载包不包含 Codex 或登录凭据。
-2. 双击 `start-console.vbs`。如果无法启动，运行 `start-console.cmd` 查看错误。
-3. 本机网页打开后，选择蓝牙或局域网并连接。蓝牙首次使用需输入设备上的六位配对码。
-4. 若使用语音，另行安装虚拟音频线和输入法，按 `docs/VOICE.md` 配置。基础用量显示不需要音频驱动。
+## 系统要求与范围
 
-程序未做代码签名；仅从本项目 Release 下载并核对校验值。Windows ARM64 未验证。
-关闭网页不会退出后台；请使用网页中的“退出”。
+- Windows 需要 Microsoft Edge WebView2 Runtime；Codex 单独安装并登录。
+- 基础任务同步和完成提示音无需语音驱动。语音默认关闭，需要自己的输入法及虚拟音频驱动；豆包兼容另需 Windows 授权。
+- EXE 内置可选豆包适配所需 Frida 17.18.0；不包含 Codex、输入法或虚拟音频驱动。
+- 关闭窗口后仍在托盘运行；更新前从程序或托盘菜单退出。
+- macOS/Linux 用户使用源码启动脚本 `bash start-console.command`，需要自行准备 Python；本版一体包仅面向 Windows x64。
+- 已验证单台设备升级、任务同步与提示音播放执行；第二台电脑、20 次重连、30 分钟稳定性与缩小缓冲后的持续语音录制仍未完整验收。
+- 程序未代码签名；从项目 Release 下载并核对 SHA256。第三方许可范围及待确认事项见 NOTICE。
 
-## macOS/Linux：启动电脑端
+## 从源码复现 Windows 一体包
 
-解压 desktop-source 包，安装并登录 Codex，再在终端进入解压目录执行：
+在对应 tag 的干净工作区，使用 ESP-IDF 5.5.3 新建构建目录并执行 `idf.py -B build-release build`。再运行：
 
-```bash
-bash start-console.command
+```powershell
+python -m pip install -r tools/requirements-build-exe.txt
+python tools/build_easy_release.py --firmware-dir build-release --idf-dir $env:IDF_PATH --output dist/release-v0.2.4
 ```
 
-需要 Python 3.10+。Linux 音频可能需要系统 PortAudio 包；macOS 语音需要 BlackHole
-以及相应蓝牙、麦克风和辅助功能权限。macOS 整机及跨电脑语音验收尚未完成。
-
-## 更新设备固件
-
-1. 先退出电脑控制台和串口监视器，用 USB 数据线连接 Passport。
-2. Windows 一体包：双击 `flash-firmware.cmd`。macOS/Linux 固件包：运行 `bash flash-firmware.command`。
-3. 核对设备串口和版本，输入 `FLASH` 确认。多个设备时需要自行选择串口。
-4. 工具先校验固件与设备分区布局，再备份原应用，最后仅更新 `0x10000` 主应用分区并校验。
-5. 备份放在包内 `backups/`；刷写日志也在该目录。成功后重启设备，再打开控制台连接。
-
-Windows 固件精简包不含运行时，可安装 Python 3.10+，执行
-`python -m pip install esptool==4.12.0` 后再运行脚本；更推荐下载 Windows 一体包。
-
-**不要写入 recovery 分区，也不要执行整片擦除。** 本版本的主应用超过 1 MB，不能放入
-设备的 recovery 分区。工具保留 NVS（配网、绑定）、cardid 和 recovery。
-若提示分区布局不匹配，工具会停止；不要绕过检查或按其他板型刷写。
-`bootloader.bin` 和 `partition-table.bin` 仅附作开发者参考，默认刷机工具不会覆盖它们。
-
-## 已知范围
-
-- 含 Codex 用量、任务完成/中断提示、BLE/LAN、语音输入、菜单精简。
-- 等待输入、审批和任务失败提醒尚未接入。
-- 豆包仅适配文档中已校验的 Windows 版本，首次启用仍需联网安装可选组件并接受 Windows 授权。
-- 未捆绑 Codex、豆包、VB-CABLE、BlackHole 或 Frida 二进制。
-- 不是完成全部硬件验收的稳定版；第二台电脑、macOS、20 次重连和 30 分钟压力测试仍有未验证项。
-- 许可范围与上游授权待确认事项见 `NOTICE`，不能将整个分发包统一宣称为 MIT。
-
-发布页：https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2
+输出目录必须不存在。脚本检查版本一致性和干净工作区，构建两个 EXE，保留依赖许可证并生成一体 ZIP 和校验值。
