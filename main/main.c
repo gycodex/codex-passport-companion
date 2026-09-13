@@ -27,6 +27,7 @@
 #include "buddy_settings.h"
 #include "buddy_state.h"
 #include "buddy_lan.h"
+#include "buddy_lan_pair.h"
 #include "buddy_lan_filter.h"
 #include "buddy_ui.h"
 #include "buddy_alert.h"
@@ -63,6 +64,7 @@ typedef struct {
             bsp_btn_t button;
             bsp_btn_ev_t event;
             uint32_t view_generation;
+            uint32_t lan_pair_id;
             buddy_page_t page;
             buddy_confirmation_t confirmation;
             buddy_settings_item_t settings_selection;
@@ -88,6 +90,7 @@ typedef struct {
 
 typedef struct {
     uint32_t generation;
+    uint32_t lan_pair_id;
     buddy_page_t page;
     buddy_confirmation_t confirmation;
     buddy_settings_item_t settings_selection;
@@ -350,6 +353,7 @@ static void on_key(bsp_btn_t button, bsp_btn_ev_t event, void *context)
     control.data.key.event = event;
     taskENTER_CRITICAL(&s_view_lock);
     control.data.key.view_generation = s_rendered_view.generation;
+    control.data.key.lan_pair_id = s_rendered_view.lan_pair_id;
     control.data.key.page = s_rendered_view.page;
     control.data.key.confirmation = s_rendered_view.confirmation;
     control.data.key.settings_selection = s_rendered_view.settings_selection;
@@ -515,6 +519,14 @@ static bool buddy_control_to_event(const buddy_control_event_t *control,
 {
     memset(event, 0, sizeof(*event));
     if (control->type == BUDDY_CONTROL_KEY) {
+        if (state->lan_pair_id || control->data.key.lan_pair_id) {
+            if (state->lan_pair_id && control->data.key.lan_pair_id == state->lan_pair_id &&
+                buddy_key_matches_rendered_view(control) && control->data.key.event == BSP_BTN_CLICK &&
+                (control->data.key.button == BSP_BTN_OK || control->data.key.button == BSP_BTN_UP)) {
+                buddy_lan_pair_decide(state->lan_pair_id, control->data.key.button == BSP_BTN_OK);
+            }
+            return false;
+        }
         return buddy_key_matches_rendered_view(control) && buddy_key_matches_state(control, state) &&
                buddy_translate_key(control, event);
     }
@@ -884,7 +896,7 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
     static bool voice_wifi_awake;
     static wifi_ps_type_t previous_wifi_ps;
     if (state->page != BUDDY_PAGE_HOME || state->menu_open || state->prompt.id[0] ||
-        state->confirmation_pending || state->passkey_visible || !(s_lan_mode ? buddy_lan_connected() : buddy_ble_is_encrypted())) buddy_voice_stop();
+        state->confirmation_pending || state->passkey_visible || state->lan_pair_id || !(s_lan_mode ? buddy_lan_connected() : buddy_ble_is_encrypted())) buddy_voice_stop();
     else if (action->voice_toggle && buddy_voice_toggle()) {
         if (s_lan_mode && !voice_wifi_awake && esp_wifi_get_ps(&previous_wifi_ps) == ESP_OK) {
             voice_wifi_awake = esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK;
@@ -950,7 +962,8 @@ static bool buddy_execute_action(buddy_state_t *state, const buddy_action_t *act
 static bool buddy_rendered_view_same(const buddy_rendered_view_t *left,
                                      const buddy_rendered_view_t *right)
 {
-    return left->page == right->page && left->confirmation == right->confirmation &&
+    return left->lan_pair_id == right->lan_pair_id &&
+           left->page == right->page && left->confirmation == right->confirmation &&
            left->settings_selection == right->settings_selection &&
            left->menu_selection == right->menu_selection &&
            left->reset_selection == right->reset_selection &&
@@ -970,6 +983,7 @@ static void buddy_publish_rendered_view(const buddy_ui_snapshot_t *snapshot)
 {
     buddy_rendered_view_t next = {
         .page = snapshot->page,
+        .lan_pair_id = snapshot->lan_pair_id,
         .confirmation = snapshot->confirmation,
         .settings_selection = snapshot->settings_selection,
         .menu_selection = snapshot->menu_selection,
@@ -1128,6 +1142,15 @@ static void buddy_app_task(void *context)
             state.lan_connected = connected;
             last_lan_generation = generation;
             buddy_lan_ip(state.lan_ip);
+            buddy_pair_gate_t pair;
+            buddy_lan_pair_snapshot(&pair);
+            if (pair.id && (state.confirmation_pending || state.passkey_visible || state.prompt.id[0])) {
+                buddy_lan_pair_decide(pair.id, false);
+                pair.id = 0;
+            }
+            state.lan_pair_id = pair.id;
+            state.lan_pair_code = pair.code;
+            state.lan_pair_approved = pair.approved;
         }
         if (s_lan_mode && ready == NULL && xQueueReceive(s_lan_queue, &event, 0) == pdTRUE) {
             if (buddy_lan_connected() && event.ble.connection_generation == buddy_lan_generation()) {

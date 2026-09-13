@@ -43,7 +43,10 @@ MIT-licensed. This is an unresolved release item, not a license grant.
 
 The IMA ADPCM implementation retains the FoloToy MIT notice at
 third_party/xiabill-ai-passport-LICENSE. Runtime dependencies retain their own
-licenses; this repository does not redistribute VB-CABLE, Doubao or Frida binaries.
+licenses. The standalone Windows EXE includes Frida for the optional, version-checked
+Doubao adapter, with its license retained in the packaged dependency notices. The
+previous v0.2.2 portable release does not include Frida. Neither package includes
+VB-CABLE or Doubao binaries.
 
 The Windows compatibility investigation consulted
 https://github.com/miaomiaozii/windows-remote-mic-app (GPL-3.0-only), especially its

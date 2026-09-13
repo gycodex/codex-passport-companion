@@ -725,7 +725,7 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
         break;
     }
 
-    bool attention = buddy_has_actionable_prompt(state) || state->passkey_visible ||
+    bool attention = buddy_has_actionable_prompt(state) || state->passkey_visible || state->lan_pair_id ||
                      state->confirmation != BUDDY_CONFIRM_NONE;
     bool working = state->connected && !state->heartbeat_stale &&
                    (state->running > 0U || state->waiting > 0U);
@@ -786,6 +786,9 @@ void buddy_state_snapshot(const buddy_state_t *state, buddy_ui_snapshot_t *snaps
     snapshot->permission_delivery = state->permission_delivery;
     snapshot->ble_connected = state->ble_connected;
     snapshot->lan_mode = state->lan_mode;
+    snapshot->lan_pair_id = state->lan_pair_id;
+    snapshot->lan_pair_code = state->lan_pair_code;
+    snapshot->lan_pair_approved = state->lan_pair_approved;
     snapshot->lan_setup = state->lan_setup;
     memcpy(snapshot->lan_setup_password, state->lan_setup_password, sizeof(snapshot->lan_setup_password));
     snapshot->lan_connected = state->lan_connected;

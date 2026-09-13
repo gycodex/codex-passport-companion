@@ -9,9 +9,9 @@ writes a final answer. The top-right status area also shows the battery level.
 
 Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
 
-Current branch firmware version: **0.2.2**.
+Current branch firmware version: **0.2.3** (prerelease). See [release notes](docs/releases/v0.2.3.md).
 
-**Download:** [v0.2.2 prerelease](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2).
+**Previously published downloads:** [v0.2.2 prerelease](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2).
 Windows users can download the portable ZIP with Python, dependencies, firmware and the
 USB updater included. See [download and installation guide](docs/DOWNLOADS.md).
 
@@ -28,7 +28,9 @@ The first live Codex heartbeat after connecting or reconnecting over BLE/LAN pla
 
 **Microphone / speech input:** new firmware and console support physical-button BLE or LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). BLE audio requires secure pairing and MTU ≥185; real-world quality and stability are still being evaluated.
 
-**Browser control panel:** run `start-console.cmd` (Windows) or `bash start-console.command` (macOS) to manage BLE/LAN connections, save pairing settings, view status and test completion reminders. Existing panel features work without reflashing; new microphone features require the matching firmware. See [setup and validation notes](docs/CONSOLE.md).
+**Windows desktop app (v0.2.3):** run `install-passport.cmd` to create a Passport shortcut, or open `start-console.vbs` directly. The desktop window provides first-run setup, a status dashboard, a system tray and optional sign-in startup. No firmware reflash is needed for this change. See [desktop guide](docs/DESKTOP.md). The browser fallback is `start-browser.cmd`; macOS still uses `bash start-console.command`.
+
+**Standalone EXE:** `python tools/build_windows_exe.py` produces `dist/windows-exe/Passport.exe` and a ZIP with notices after installing `tools/requirements-build-exe.txt`. The executable needs neither Python nor the source tree. Windows x64 and WebView2 Runtime are required. The v0.2.3 tag includes desktop and automatic LAN pairing sources; downloadable v0.2.3 assets have not been published. Automatic pairing requires the matching firmware.
 
 **LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 

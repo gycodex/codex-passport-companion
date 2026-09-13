@@ -55,9 +55,10 @@ def main():
     for name in tracked:
         path = Path(name)
         include = name in ("README.md", "README.zh_CN.md", "LICENSE", "NOTICE", "start-console.cmd",
-                           "start-console.vbs", "start-console.command", "flash-firmware.cmd", "flash-firmware.command")
+                           "start-console.vbs", "start-console.command", "start-browser.cmd", "install-passport.cmd",
+                           "flash-firmware.cmd", "flash-firmware.command")
         include |= name.startswith(("docs/", "third_party/", "tools/console/"))
-        include |= len(path.parts) == 2 and path.parts[0] == "tools" and path.suffix in (".py", ".ps1", ".txt")
+        include |= len(path.parts) == 2 and path.parts[0] == "tools" and path.suffix in (".py", ".ps1", ".txt", ".spec")
         if name and include:
             destination = desktop / name
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -66,6 +67,8 @@ def main():
     # This is a freshly downloaded official embedded runtime, never a user virtualenv.
     # pip's cross-install console wrappers point to the build interpreter; use python -m instead.
     shutil.copytree(args.runtime_dir, portable / "runtime", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "bin"))
+    subprocess.run([str((portable / "runtime/python.exe").resolve()), "-c",
+                    "import webview, pystray, PIL"], check=True)
     files = {"FoloToy-AI-Passport.bin": app,
              "bootloader.bin": args.firmware_dir / "bootloader/bootloader.bin",
              "partition-table.bin": args.firmware_dir / "partition_table/partition-table.bin"}

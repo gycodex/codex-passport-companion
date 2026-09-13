@@ -8,9 +8,9 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 窗口名称按实际分钟数生成；没有返回的窗口不会显示，也不会被当作剩余 100%。
 
-当前分支固件版本：**0.2.2**。
+当前分支固件版本：**0.2.3**（预发布）。见[更新说明](docs/releases/v0.2.3.md)。
 
-**直接下载：**[v0.2.2 预发布版](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2)。Windows 一体包包含 Python、依赖、固件与 USB 刷机工具；另提供固件精简包和 macOS/Linux 启动脚本包。详见[下载与安装](docs/DOWNLOADS.md)。
+**此前已发布下载：**[v0.2.2 预发布版](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.2)。Windows 一体包包含 Python、依赖、固件与 USB 刷机工具；另提供固件精简包和 macOS/Linux 启动脚本包。详见[下载与安装](docs/DOWNLOADS.md)。
 
 电脑桥接现在识别日志中的 `turn_aborted`：仅结束对应轮次的运行计数，在首页短暂显示约 6 秒的 `Task interrupted`，不增加完成计数、不触发完成庆祝或提示音。其他任务仍可继续运行；同批有任务完成时，优先显示完成提醒。桥接启动或重新连接时不会补播旧中断。此功能复用现有状态文字，无需重刷固件；更新后重启电脑端桥接生效。等待输入、等待审批和任务失败尚未接入，不能从单次工具报错推断整个任务失败。
 
@@ -18,9 +18,11 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 **设备麦克风：**新固件与新版控制台可通过蓝牙或局域网把设备声音交给讯飞、豆包或 Typeless 等输入法，使用可配置快捷键开始和结束。需要安装虚拟音频线；蓝牙需要安全配对及足够的协商数据包大小，录音稳定性仍需实测。详见 [语音输入设置](docs/VOICE.md)。
 
-**浏览器控制台：**Windows 双击 `start-console.cmd`，macOS 执行 `bash start-console.command`，即可在本机网页管理蓝牙/局域网连接、保存配对配置、查看状态和测试完成提醒。已有功能无需重刷；新增语音功能需要对应新版固件。详见 [启动与使用说明](docs/CONSOLE.md)。
+**Windows 桌面版（当前源码，尚未发布）：**双击 `install-passport.cmd` 创建 Passport 桌面图标，或用 `start-console.vbs` 直接打开。首次使用按向导连接设备，以后在状态页查看任务与用量；关闭窗口后在托盘运行，可选登录 Windows 时启动。无需为桌面版重刷固件。详见 [桌面版说明](docs/DESKTOP.md)。网页版保留在 `start-browser.cmd`，macOS 仍使用 `bash start-console.command`。
 
-**局域网连接分支：**新增加密 Wi‑Fi 传输，无蓝牙的台式机也可使用。支持手机连接设备热点，在网页中扫描、填写 Wi‑Fi 并下载配对文件；也可通过 USB 配网。保留蓝牙模式。详见 [局域网配网与使用说明](docs/LAN.md)。
+**单文件 EXE：**已支持构建 `dist/windows-exe/Passport.exe`，无需 Python 和源码目录；同时生成带中文说明与许可证的 ZIP。构建方法和运行要求见 [EXE 说明](docs/DESKTOP.md#单文件-exe)。v0.2.3 下载附件尚未上传发布页；自动配对需同时升级配套固件。
+
+**局域网连接分支：**新增加密 Wi‑Fi 传输，无蓝牙的台式机也可使用。支持手机连接设备热点，在网页中扫描、填写 Wi‑Fi，电脑搜索设备并核对号码完成配对；也可通过 USB 配网。保留蓝牙模式。详见 [局域网配网与使用说明](docs/LAN.md)。
 
 实现基于仓库的 `demo/claude-buddy-port` 参考分支，保留了有界状态机、像素 UI、
 加密 Nordic UART BLE、绑定与自动重连。新增的本机桥接器负责把 Codex 数据转换成

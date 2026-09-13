@@ -97,11 +97,14 @@ class Controller:
         self.directory = directory
         self.lock = threading.RLock()
         self.config = dict(mode="lan", host="", port=8765, device="", codex="", codex_auto=True, autoconnect=False,
+            setup_complete=False,
             voice_enabled=False, voice_output="", voice_ime="xunfei",
             voice_start_key="f6", voice_stop_key="f6", voice_hotkeys=True, voice_doubao_compat=False)
         try:
             saved = json.loads((directory / "settings.json").read_text(encoding="utf-8"))
             self.config.update({k: saved[k] for k in self.config if k in saved})
+            # Existing users keep their configured transport and skip first-run setup.
+            self.config["setup_complete"] = saved.get("setup_complete", True) is True
         except (OSError, ValueError):
             pass
         self.state = dict(status="disconnected", running=0, usage={}, synced_at=None)
@@ -110,6 +113,11 @@ class Controller:
         self.last_test = 0
         self.task = None
         self.stop_requested = False
+        self.lan_devices = []
+        self.lan_scan_at = 0
+        self.pair = None
+        self.pair_worker = None
+        self.pair_expiry = None
         self.loop = asyncio.new_event_loop()
         self.action_lock = asyncio.Lock()
         self.thread = threading.Thread(target=self.run_loop, daemon=True)
@@ -156,12 +164,57 @@ class Controller:
             return await self.perform_action(name, data)
 
     async def perform_action(self, name, data):
-        if name == "save":
+        if name in ("save", "connect", "scan", "scan_lan") and self.pair is not None:
+            raise ValueError("请先完成或取消当前配对")
+        if name == "scan_lan":
+            from lan_pairing import discover
+            self.lan_devices = await discover()
+            self.lan_scan_at = time.monotonic()
+            return {"devices": self.lan_devices}
+        if name == "pair_start":
+            if self.pair is not None or (self.task and not self.task.done()):
+                raise ValueError("请先断开连接或取消当前配对")
+            device = next((d for d in self.lan_devices if d['id'] == data.get('id') and d['host'] == data.get('host')), None)
+            if not device or time.monotonic() - self.lan_scan_at > 60 or not device['available']:
+                raise ValueError("设备列表已变化，请重新搜索；已连接的设备需先断开旧电脑")
+            from lan_pairing import Pairing
+            pair = Pairing()
+            public = await pair.start(device)
+            self.pair = pair
+            with self.lock:
+                self.state['pairing'] = dict(public, status='compare')
+            self.pair_expiry = asyncio.create_task(self.expire_pair(pair))
+            return public
+        if name == "pair_confirm":
+            if not self.pair or data.get('id') != self.pair.id:
+                raise ValueError("配对已过期，请重新开始")
+            if self.pair_worker and not self.pair_worker.done():
+                return {"ok": True}
+            with self.lock:
+                self.state['pairing']['status'] = 'waiting_device'
+            self.pair_worker = asyncio.create_task(self.finish_pair(self.pair))
+            return {"ok": True}
+        if name == "pair_cancel":
+            if self.pair and data.get('id') != self.pair.id:
+                raise ValueError("配对会话已变化，请刷新")
+            await self.cancel_pair()
+            return {"ok": True}
+        if name == "check_environment":
+            executable = find_codex() if self.config["codex_auto"] else self.config["codex"]
+            return {"codex_found": bool(executable and (shutil.which(executable) or Path(executable).is_file()))}
+        elif name == "finish_setup":
+            if self.state["status"] != "connected" or not self.state.get("synced_at"):
+                raise ValueError("请先连接设备并完成首次同步")
+            cfg = dict(self.config, setup_complete=True)
+            atomic_json(self.directory / "settings.json", cfg)
+            with self.lock:
+                self.config = cfg
+        elif name == "save":
             if self.task and not self.task.done():
                 raise ValueError("Disconnect before changing settings")
             cfg = dict(self.config)
             for key in cfg:
-                if key in data:
+                if key in data and key != "setup_complete":
                     cfg[key] = data[key]
             if cfg["mode"] not in ("lan", "ble"):
                 raise ValueError("Invalid transport")
@@ -210,6 +263,7 @@ class Controller:
             self.report("starting")
             self.task = asyncio.create_task(self.run_bridge(args))
         elif name == "disconnect":
+            await self.cancel_pair()
             self.stop_requested = True
             self.report("stopping")
             if self.task and not self.task.done():
@@ -248,6 +302,55 @@ class Controller:
         else:
             raise ValueError("Unknown action")
         return {"ok": True}
+
+    async def cancel_pair(self):
+        cancelled = []
+        for task in (self.pair_worker, self.pair_expiry):
+            if task and task is not asyncio.current_task() and not task.done():
+                task.cancel()
+                cancelled.append(task)
+        if cancelled:
+            await asyncio.gather(*cancelled, return_exceptions=True)
+        if self.pair:
+            await self.pair.close()
+        self.pair = None
+        with self.lock:
+            self.state['pairing'] = None
+
+    async def expire_pair(self, pair):
+        await asyncio.sleep(30)
+        async with self.action_lock:
+            if self.pair is pair:
+                await self.cancel_pair()
+                with self.lock:
+                    self.state['pairing'] = dict(status='error', message='配对已超时，请重新开始')
+
+    async def finish_pair(self, pair):
+        try:
+            pairing = await pair.confirm(pair.id)
+            async with self.action_lock:
+                if self.pair is not pair:
+                    return
+                cfg = dict(self.config, mode='lan', host=pair.device['host'], port=pair.device['port'])
+                # The file stays internal. No keys are returned to the browser.
+                atomic_json(self.directory / 'pairing.json', pairing)
+                atomic_json(self.directory / 'settings.json', cfg)
+                with self.lock:
+                    self.config = cfg
+                    self.state['pairing'] = dict(status='success', id=pair.id)
+                self.pair = None
+                if self.pair_expiry:
+                    self.pair_expiry.cancel()
+                await self.perform_action('connect', {})
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if self.pair is pair:
+                self.pair = None
+                with self.lock:
+                    self.state['pairing'] = dict(status='error', message='配对未完成，请确认两端校验码一致，并在设备上按确认键；稍后可重新搜索')
+        finally:
+            await pair.close()
 
     async def run_bridge(self, args):
         try:
@@ -318,7 +421,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = {"message": "正在等待 Windows 授权…"}
             return self.reply(200, result)
         if self.path == "/health":
-            return self.reply(200, {"app": "passport-companion-console"})
+            return self.reply(200, {"app": "passport-companion-console", "desktop_api": 1})
         assets = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/style.css": ("style.css", "text/css")}
         if self.path not in assets:
             return self.reply(404, {"error": "Not found"})

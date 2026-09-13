@@ -1,4 +1,5 @@
 #include "buddy_lan.h"
+#include "buddy_lan_pair.h"
 #include "buddy_voice.h"
 #include "buddy_sound.h"
 #include <stdio.h>
@@ -264,6 +265,10 @@ static void serve(int client, lan_buffers_t *buffers)
     if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, s_config.key, 256) != 0) goto done;
     int hello_size = read_line(client, buffers->line, sizeof(buffers->line));
     if (hello_size <= 0 || hello_size > 96) goto done;
+    if (strncmp(buffers->line, "FAP_PAIR1 ", 10) == 0) {
+        buddy_lan_pair_serve(client, buffers->line, s_config.key);
+        goto done;
+    }
     cJSON *request = parse_flat_object(buffers->line);
     const cJSON *version = cJSON_GetObjectItemCaseSensitive(request, "v");
     const cJSON *client_value = cJSON_GetObjectItemCaseSensitive(request, "client_nonce");
@@ -388,6 +393,8 @@ esp_err_t buddy_lan_start(buddy_lan_receive_t receive)
     if (err == ESP_OK) err = esp_wifi_set_config(WIFI_IF_STA, &config);
     memset(&config, 0, sizeof(config));
     if (err == ESP_OK) err = esp_wifi_start();
+    if (err != ESP_OK) return err;
+    err = buddy_lan_pair_start();
     if (err != ESP_OK) return err;
     if (xTaskCreate(server_task, "lan_server", 8192, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "LAN transport started");

@@ -1,4 +1,4 @@
-param([switch]$Administrator)
+param([switch]$Administrator, [switch]$Browser)
 $ErrorActionPreference = 'Stop'
 $repoPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $repoPath
@@ -16,13 +16,13 @@ try {
         $process.WaitForExit()
         exit $process.ExitCode
     }
-    try {
+    if ($Browser) { try {
         $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8766/health' -TimeoutSec 2
         if ($health.app -eq 'passport-companion-console') {
             Start-Process 'http://127.0.0.1:8766/'
             exit 0
         }
-    } catch { }
+    } catch { } }
     $venvPath = Join-Path $repoPath '.venv-console'
     $consolePython = Join-Path $venvPath 'Scripts\python.exe'
     $portablePython = Join-Path $repoPath 'runtime\python.exe'
@@ -66,6 +66,17 @@ try {
             & $consolePython -m pip install -r (Join-Path $PSScriptRoot 'requirements-doubao.txt')
             if ($LASTEXITCODE -ne 0) { throw 'Doubao compatibility dependency installation failed.' }
         }
+    }
+    if (-not $Browser) {
+        & $consolePython -c 'import importlib.util,sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in sys.argv[1:]) else 1)' webview pystray PIL
+        if ($LASTEXITCODE -ne 0) {
+            & $consolePython -m pip install -r (Join-Path $PSScriptRoot 'requirements-desktop.txt')
+            if ($LASTEXITCODE -ne 0) { throw 'Desktop dependency installation failed. Retry or use start-browser.cmd.' }
+        }
+        $windowlessPython = Join-Path (Split-Path $consolePython -Parent) 'pythonw.exe'
+        $entryPoint = Join-Path $PSScriptRoot 'passport_desktop.py'
+        Start-Process -FilePath $windowlessPython -ArgumentList @(('"' + $entryPoint + '"')) -WindowStyle Hidden
+        exit 0
     }
     $windowlessPython = Join-Path (Split-Path $consolePython -Parent) 'pythonw.exe'
     $entryPoint = Join-Path $PSScriptRoot 'run_console_windowless.py'

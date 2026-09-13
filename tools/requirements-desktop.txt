@@ -1,0 +1,4 @@
+-r requirements-console.txt
+pywebview==6.2.1
+pystray==0.19.5
+Pillow>=11,<13

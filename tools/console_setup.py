@@ -3,11 +3,13 @@ import ctypes
 import getpass
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import time
 import urllib.request
+from desktop_runtime import child_environment, command, frozen
 
 
 def needs_setup(cfg):
@@ -24,12 +26,21 @@ def needs_setup(cfg):
 def launch(port, directory, token):
     if sys.platform != 'win32':
         raise ValueError('豆包授权仅支持 Windows')
-    args = [str(Path(__file__).resolve()), str(port), str(directory.resolve()), token, getpass.getuser()]
+    args = command("setup", port, directory.resolve(), token, getpass.getuser())
     shell = ctypes.windll.shell32.ShellExecuteW
     shell.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p,
                       ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_int]
     shell.restype = ctypes.c_void_p
-    result = shell(None, 'runas', sys.executable, subprocess.list2cmdline(args), str(Path(__file__).parent), 0)
+    previous = os.environ.get("PYINSTALLER_RESET_ENVIRONMENT")
+    try:
+        if frozen():
+            os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        result = shell(None, 'runas', args[0], subprocess.list2cmdline(args[1:]), str(directory.resolve()), 0)
+    finally:
+        if previous is None:
+            os.environ.pop("PYINSTALLER_RESET_ENVIRONMENT", None)
+        else:
+            os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = previous
     if not result or result <= 32:
         raise ValueError('未完成 Windows 授权，后台保持运行，可以重试')
 
@@ -52,6 +63,8 @@ def main():
         except importlib.metadata.PackageNotFoundError:
             installed = False
         if not installed:
+            if frozen():
+                raise ValueError("EXE 缺少匹配的豆包组件，请重新下载完整版本")
             with (directory / 'setup.log').open('a', encoding='utf-8') as log:
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', str(Path(__file__).with_name('requirements-doubao.txt'))],
                                stdout=log, stderr=log, check=True, timeout=180,
@@ -69,8 +82,8 @@ def main():
             time.sleep(.25)
         else:
             raise ValueError('旧后台未退出，请重试')
-        subprocess.Popen([sys.executable, str(Path(__file__).with_name('run_console_windowless.py')),
-            '--port', port, '--config-dir', str(directory), '--connect'], creationflags=subprocess.CREATE_NO_WINDOW)
+        subprocess.Popen(command("backend", '--port', port, '--config-dir', directory, '--connect'),
+            env=child_environment(), creationflags=subprocess.CREATE_NO_WINDOW)
         report('正在启动已授权后台…')
     except Exception:
         import traceback

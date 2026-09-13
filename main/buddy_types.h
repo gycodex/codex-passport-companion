@@ -309,6 +309,9 @@ typedef struct {
     char lan_setup_password[13];
     bool lan_connected;
     char lan_ip[16];
+    uint32_t lan_pair_id;
+    uint32_t lan_pair_code;
+    bool lan_pair_approved;
     bool ble_encrypted;
     bool ble_enabled;
     bool battery_available;

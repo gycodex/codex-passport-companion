@@ -506,9 +506,10 @@ async def find_device(device_name: str | None) -> Any:
 @asynccontextmanager
 async def open_transport(args):
     if args.lan:
-        from lan_transport import LanClient, load_key
+        from lan_transport import LanClient, load_key, load_device_id
         print(f"Connecting to LAN device {args.lan}:{args.lan_port}…", flush=True)
-        async with LanClient(args.lan, load_key(args.lan_key_file), args.lan_port) as client:
+        async with LanClient(args.lan, load_key(args.lan_key_file), args.lan_port,
+                             device_id=load_device_id(args.lan_key_file)) as client:
             yield client
     else:
         from bleak import BleakClient

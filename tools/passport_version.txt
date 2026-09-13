@@ -1,0 +1,13 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(filevers=(0, 2, 3, 0), prodvers=(0, 2, 3, 0), mask=0x3f,
+                   flags=0x2, OS=0x40004, fileType=0x1, subtype=0, date=(0, 0)),
+  kids=[StringFileInfo([StringTable('040904B0', [
+    StringStruct('CompanyName', 'Passport Companion Contributors'),
+    StringStruct('FileDescription', 'Passport Desktop Companion'),
+    StringStruct('FileVersion', '0.2.3.0'),
+    StringStruct('InternalName', 'Passport'),
+    StringStruct('OriginalFilename', 'Passport.exe'),
+    StringStruct('ProductName', 'Passport Desktop Companion'),
+    StringStruct('ProductVersion', '0.2.3')
+  ])]), VarFileInfo([VarStruct('Translation', [1033, 1200])])]
+)

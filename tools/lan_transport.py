@@ -52,16 +52,38 @@ def unseal(key: bytes, challenge: bytes, sequence: int, frame: bytes, response=F
     return AESGCM(key).decrypt(nonce_for(challenge, sequence, response), bytes.fromhex(encoded.decode()), aad)
 
 class LanClient:
-    def __init__(self, host: str, key: bytes, port=PORT):
+    def __init__(self, host: str, key: bytes, port=PORT, device_id=''):
         if len(key) != 32:
             raise ValueError("LAN key must contain 32 bytes")
         self.host, self.key, self.port = host, key, port
+        self.device_id = device_id
         self.writer = None
         self.is_connected = False
         self.sequence = 0
         self.request_lock = asyncio.Lock()
 
     async def __aenter__(self):
+        try:
+            return await self.connect_at()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if not self.device_id:
+                raise
+        from lan_pairing import discover
+        candidates = [d for d in await discover() if d['id'] == self.device_id]
+        for device in candidates[:3]:
+            self.host = device['host']
+            try:
+                # Discovery is only a hint; the stored key must authenticate it.
+                return await self.connect_at()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                continue
+        raise ConnectionError('已配对设备暂时不可达，请确认设备已联网')
+
+    async def connect_at(self):
         try:
             self.reader, self.writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port, limit=8192), 10)
@@ -142,3 +164,9 @@ def load_key(path: str) -> bytes:
     if len(key) != 32:
         raise ValueError("Invalid key in LAN configuration")
     return key
+
+
+def load_device_id(path: str) -> str:
+    import re
+    value = json.loads(Path(path).expanduser().read_text(encoding='utf-8')).get('device_id', '')
+    return value if isinstance(value, str) and re.fullmatch('[0-9a-f]{12}', value) else ''

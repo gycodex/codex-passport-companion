@@ -485,6 +485,14 @@ static void draw_overlay(lv_layer_t *layer, const buddy_ui_snapshot_t *s)
     char body[448];
     int x;
     int y;
+    if (s->lan_pair_id) {
+        snprintf(body, sizeof(body), "Compare with PC:\n\n       %06lu\n\n%s",
+                 (unsigned long)s->lan_pair_code,
+                 s->lan_pair_approved ? "Confirmed here.\nConfirm on your PC." : "Only accept if both\ncodes match.");
+        panel(layer, 55, 220, COL_BLUE, "LAN pairing", body,
+              s->lan_pair_approved ? "Waiting for computer" : "OK: match   UP: cancel");
+        return;
+    }
     buddy_overlay_kind_t overlay = buddy_overlay_select(s->confirmation_pending,
                                                         s->passkey_visible,
                                                         s->prompt_id[0] != '\0',
