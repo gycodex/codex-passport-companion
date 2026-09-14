@@ -2,7 +2,6 @@
 
 [简体中文](README.zh_CN.md) · **English**
 
-
 This firmware turns FoloToy AI Passport into a private Codex desk companion. It shows the
 remaining share of the Codex usage windows actually returned by the service as progress bars, shows the
 number of active tasks, and displays a six-second **Task complete** celebration when Codex
@@ -27,13 +26,13 @@ The first live Codex heartbeat after connecting or reconnecting over BLE/LAN pla
 
 **Microphone / speech input:** new firmware and console support physical-button BLE or LAN audio to a virtual cable and configurable speech-input shortcuts. See [voice setup and verification scope](docs/VOICE.md). BLE audio requires secure pairing and MTU ≥185; real-world quality and stability are still being evaluated.
 
-**Windows desktop app:** run `install-passport.cmd` to create a Passport shortcut, or open `start-console.vbs` directly. The desktop window provides first-run setup, a status dashboard, a system tray and optional sign-in startup. No firmware reflash is needed for this change. See [desktop guide](docs/DESKTOP.md). The browser fallback is `start-browser.cmd`; macOS still uses `bash start-console.command`.
+**Windows desktop app from source:** run `install-passport.cmd` to create a Passport shortcut, or open `start-console.vbs` directly. The desktop window provides first-run setup, a status dashboard, a system tray and optional sign-in startup. No firmware reflash is needed for this change. See [desktop guide](docs/DESKTOP.md). The browser fallback is `start-browser.cmd`; macOS still uses `bash start-console.command`.
 
 **Standalone EXE:** `python tools/build_windows_exe.py` produces `dist/windows-exe/Passport.exe` and a ZIP with notices after installing `tools/requirements-build-exe.txt`. The executable needs neither Python nor the source tree. Windows x64 and WebView2 Runtime are required. The v0.2.4 all-in-one package includes the desktop executable and matching firmware for automatic pairing.
 
-**LAN support:** this branch adds encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
+**LAN support:** the firmware supports encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 
-The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it awake. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
+The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it on, with automatic dimming to 20% after the configured timeout. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
 
 The implementation starts from this repository's `demo/claude-buddy-port` reference and
 keeps its bounded state machine, pixel UI, encrypted Nordic UART BLE transport, bonding,
@@ -41,9 +40,17 @@ and reconnect behavior. A local bridge translates Codex data into the device pro
 
 ## Quick start
 
-Use the **`main`** branch. Flash its firmware using ESP-IDF 5.5.3, install Python 3.10+ and the Codex CLI, and sign in to Codex. On Windows, double-click `start-console.vbs` (`start-console.cmd` shows startup errors); on macOS, run `bash start-console.command`.
+For Windows 10/11 x64, use the [all-in-one package](docs/DOWNLOADS.md):
 
-In the local page, select Bluetooth (scan and secure pairing) or LAN (device IP and pairing JSON). Both transports support usage, task status, reminders and microphone forwarding. For voice, install a virtual audio cable and configure your input method; this is not a native Bluetooth headset.
+1. Extract the complete ZIP. If the device needs an upgrade, connect it over USB and run `升级设备固件.exe`, following its backup and verification prompts.
+2. Install and sign in to Codex, then open `Passport.exe`. Microsoft Edge WebView2 Runtime is required; Python is not.
+3. Choose Bluetooth and complete secure pairing, or [connect the device to Wi-Fi](docs/LAN.md), search for it in Passport, and confirm the matching six-digit numbers on the computer and device.
+
+### Run from source
+
+Use the **`main`** branch, Python 3.10+ and an installed, signed-in Codex CLI. Build the firmware with ESP-IDF 5.5.3 if needed; see the build section below. On Windows, double-click `start-console.vbs` (`start-console.cmd` shows startup errors); on macOS, run `bash start-console.command`.
+
+In the desktop window or browser console, select Bluetooth or LAN. LAN supports device discovery and number-confirmed pairing with matching firmware. If broadcast discovery fails, use the current source console's “跨子网 / 按 IP 查找” option with a reachable device IP; it still uses the six-digit confirmation and needs no pairing file. Older firmware can use the separate manual connection and pairing JSON options. Both transports support usage, task status, reminders and microphone forwarding. For voice, install a virtual audio cable and configure your input method; this is not a native Bluetooth headset.
 
 - [中文快速开始](README.zh_CN.md#快速开始)
 - [Console, transport switching and another computer](docs/CONSOLE.md)
@@ -56,15 +63,16 @@ On the home screen: UP changes page, DOWN toggles recording, hold OK opens the m
 ## Data flow and privacy
 
 ```text
-Codex app-server ── rate-limit snapshot ─┐
-                                         ├─ local Python bridge ── encrypted BLE ── Passport
-~/.codex/sessions ─ message metadata ────┘
+Codex app-server -- usage / task status --+
+                                         +-- local bridge -- encrypted BLE / LAN -- Passport
+~/.codex/sessions -- message metadata ----+
 ```
 
-The bridge asks the local Codex app-server for `account/rateLimits/read`. It reads only
-JSONL record type, role, and phase from local session files to detect a user turn and a
-`final_answer`; it never sends prompt or answer content to the device. The bridge does not
-read or copy Codex authentication tokens.
+The bridge calls the local Codex app-server methods `account/rateLimits/read` and
+`thread/list` for usage and active-task status. It parses local session JSONL files and
+uses record types, roles, phases, timestamps, session/turn identifiers and task events
+to recognize task starts, completions and interruptions. Prompt and answer content is
+not sent to the device. The bridge does not read or copy Codex authentication tokens.
 
 Codex reports usage as percentages rather than absolute message counts, so the screen
 shows `LEFT = 100 - usedPercent` for each available window. If the service is temporarily
@@ -73,7 +81,7 @@ reconciles after connectivity returns. A never-observed snapshot is shown as una
 
 ## Build and flash the firmware
 
-Use ESP-IDF 5.5.3 and target ESP32-C3:
+Enter an ESP-IDF 5.5.3 development shell with `IDF_PATH` set and target ESP32-C3:
 
 ```bash
 idf.py set-target esp32c3
@@ -81,12 +89,20 @@ idf.py build
 idf.py flash monitor
 ```
 
+On Windows PowerShell, if CMake reports an invalid character escape in an ESP-IDF path,
+normalize the environment path with `$env:IDF_PATH = $env:IDF_PATH.Replace('\', '/')`
+after activating ESP-IDF, then rerun the build.
+
+The application is flashed to the 3 MB `factory` partition at `0x10000`. A size warning
+for the separate 1 MB `recovery` partition does not mean the factory partition is full.
+Keep the factory recovery image at `0x700000`; do not write this application there.
+
 The device advertises as `Codex-<MAC suffix>`. The first encrypted connection displays a
 six-digit passkey on the Passport; enter it in the operating system pairing dialog.
 
 ## Run the local bridge
 
-Codex CLI must already be installed and signed in. Python 3.10 or newer is recommended.
+This command-line example uses BLE. Codex CLI must already be installed and signed in. Use Python 3.10 or newer. The commands below are for macOS/Linux; on Windows, use the source launchers above or `.venv\Scripts\python.exe` with `-m pip` to install dependencies.
 
 ```bash
 python3 -m venv .venv
@@ -117,22 +133,27 @@ clock rotation, and custom-character deletion entries have been removed. This me
 cleanup requires updated device firmware.
 
 - `UP`: cycle Home → Usage → Info.
-- `DOWN`: scroll or change the current sub-page.
+- `DOWN`: toggle recording on Home; change sub-pages on Usage/Info or move the selection in menus. Voice forwarding requires the optional voice setup.
 - Hold `OK`: open the menu.
-- Settings → Unpair: delete the BLE bond after on-device confirmation.
+- Settings → Reset → Unpair (设置 → 重置 → 解除蓝牙配对): delete the BLE bond after on-device confirmation.
 
 ## Tests
+
+Enter the ESP-IDF 5.5.3 environment first (`IDF_PATH` must be set). Run the Python tests with the console development environment and its dependencies installed.
 
 ```bash
 cmake -S tests -B build-host
 cmake --build build-host
 ctest --test-dir build-host --output-on-failure
-python3 -m unittest tests/test_codex_bridge.py
+python3 -m unittest discover -s tests -p "test_*.py"
 ```
 
 Firmware build success is not hardware validation. On-device acceptance must separately
-verify pairing, both usage windows, reset countdowns, running/ready state, completion
-celebration, reconnect, battery display, and a sustained BLE connection.
+verify secure pairing, the available usage windows (including missing-window behavior),
+reset countdowns, running/ready state, completion and interruption alerts, reconnect,
+battery display, and BLE/LAN stability. Run at least 20 connect/disconnect cycles and
+a 30-minute connected soak, recording heap, watchdog, allocation and transport errors.
+Mark unavailable hardware checks `NOT RUN`; see the [release checklist](docs/RELEASE_CHECKLIST.md).
 
 ## Acknowledgements
 

@@ -2,7 +2,6 @@
 
 **简体中文** · [English](README.md)
 
-
 这个固件把 FoloToy AI Passport 变成一个注重隐私的 Codex 桌面伙伴：显示当前
 接口实际返回的用量窗口剩余比例（例如 7 天）、以进度条展示余量、显示正在进行的任务数，并在
 Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首页右上角同时显示电量。
@@ -19,17 +18,25 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 **设备麦克风：**新固件与新版控制台可通过蓝牙或局域网把设备声音交给讯飞、豆包或 Typeless 等输入法，使用可配置快捷键开始和结束。需要安装虚拟音频线；蓝牙需要安全配对及足够的协商数据包大小，录音稳定性仍需实测。详见 [语音输入设置](docs/VOICE.md)。
 
-**Windows 桌面版（当前源码，尚未发布）：**双击 `install-passport.cmd` 创建 Passport 桌面图标，或用 `start-console.vbs` 直接打开。首次使用按向导连接设备，以后在状态页查看任务与用量；关闭窗口后在托盘运行，可选登录 Windows 时启动。无需为桌面版重刷固件。详见 [桌面版说明](docs/DESKTOP.md)。网页版保留在 `start-browser.cmd`，macOS 仍使用 `bash start-console.command`。
+**Windows 桌面版（源码启动）：**双击 `install-passport.cmd` 创建 Passport 桌面图标，或用 `start-console.vbs` 直接打开。首次使用按向导连接设备，以后在状态页查看任务与用量；关闭窗口后在托盘运行，可选登录 Windows 时启动。无需为桌面版重刷固件。详见 [桌面版说明](docs/DESKTOP.md)。网页版保留在 `start-browser.cmd`，macOS 仍使用 `bash start-console.command`。
 
 **单文件 EXE：**已支持构建 `dist/windows-exe/Passport.exe`，无需 Python 和源码目录；同时生成带中文说明与许可证的 ZIP。构建方法和运行要求见 [EXE 说明](docs/DESKTOP.md#单文件-exe)。v0.2.4 一体包同时提供电脑 EXE 和配套固件；自动配对需使用配套固件。
 
-**局域网连接分支：**新增加密 Wi‑Fi 传输，无蓝牙的台式机也可使用。支持手机连接设备热点，在网页中扫描、填写 Wi‑Fi，电脑搜索设备并核对号码完成配对；也可通过 USB 配网。保留蓝牙模式。详见 [局域网配网与使用说明](docs/LAN.md)。
+**局域网连接：**支持加密 Wi‑Fi 传输，无蓝牙的台式机也可使用。支持手机连接设备热点，在网页中扫描、填写 Wi‑Fi，电脑搜索设备并核对号码完成配对；也可通过 USB 配网。保留蓝牙模式。详见 [局域网配网与使用说明](docs/LAN.md)。
 
 实现基于仓库的 `demo/claude-buddy-port` 参考分支，保留了有界状态机、像素 UI、
 加密 Nordic UART BLE、绑定与自动重连。新增的本机桥接器负责把 Codex 数据转换成
 设备协议。
 
 ## 快速开始
+
+Windows 10/11 x64 用户优先使用 [Windows 一体包](docs/DOWNLOADS.md)：
+
+1. 完整解压 ZIP。设备需要升级时，连接 USB，运行 `升级设备固件.exe`，按提示备份、升级并校验。
+2. 安装并登录 Codex，再双击 `Passport.exe`。需要 Microsoft Edge WebView2 Runtime，无需安装 Python。
+3. 选择蓝牙并完成安全配对；或先[给设备连接 Wi-Fi](docs/LAN.md)，再在 Passport 中搜索设备，核对电脑和设备上的六位号码，两端确认后自动保存配对。
+
+### 从源码运行
 
 使用 **`main`** 分支：
 
@@ -41,7 +48,7 @@ cd codex-passport-companion
 1. 给 FoloToy AI Passport 刷入本分支固件，见下方「编译与烧录」。已有最新版固件可跳过。
 2. 电脑安装 Python 3.10+ 和 Codex CLI，完成 Codex 登录。
 3. Windows 双击 `start-console.vbs`；macOS 执行 `bash start-console.command`。
-4. 在网页选择蓝牙或局域网，按提示配对并连接。需要麦克风时再配置语音输入。
+4. 在桌面窗口或浏览器控制台选择蓝牙或局域网，按提示配对并连接。配套固件支持搜索设备、核对号码自动配对。广播搜索不到时，当前源码控制台可使用“跨子网 / 按 IP 查找”，填写电脑可访问的设备 IP，仍通过六位码确认，无需配对文件；旧固件可使用单独的手动连接选项填写 IP、导入配对 JSON。需要麦克风时再配置语音输入。
 
 | 想做什么 | 阅读这份说明 |
 | --- | --- |
@@ -57,14 +64,15 @@ cd codex-passport-companion
 ## 数据流与隐私
 
 ```text
-Codex app-server ── 限额快照 ───────────┐
+Codex app-server ── 用量 / 任务状态 ─────┐
                                         ├─ 本机 Python 桥 ── 加密 BLE / LAN ── Passport
 ~/.codex/sessions ─ 消息元数据 ─────────┘
 ```
 
-桥接器通过本机 Codex app-server 调用 `account/rateLimits/read`。为了识别任务开始和
-`final_answer`，它只读取本地 JSONL 记录的类型、角色与阶段，不会把提示词或回答
-正文发送到设备，也不会读取或复制 Codex 登录令牌。
+桥接器通过本机 Codex app-server 的 `account/rateLimits/read` 和 `thread/list` 获取
+用量与活动任务状态。它解析本地会话 JSONL 文件，使用记录类型、角色、阶段、时间戳、
+会话与轮次标识及任务事件，识别任务开始、完成和中断。提示词和回答正文不会发送到设备；
+桥接器也不会读取或复制 Codex 登录令牌。
 
 Codex 返回的是已用百分比而不是绝对消息数，所以设备显示
 `剩余 = 100 - usedPercent`。如果接口在窗口重置时暂时不可用，桥接器会先切换到
@@ -80,12 +88,18 @@ idf.py build
 idf.py flash monitor
 ```
 
+Windows PowerShell 下，若 CMake 报 ESP-IDF 路径转义错误，在激活 ESP-IDF 环境后执行
+`$env:IDF_PATH = $env:IDF_PATH.Replace('\', '/')`，将路径改为正斜杠，再重新构建。
+
+应用写入 `0x10000` 的 3 MB `factory` 分区。构建中针对独立 1 MB `recovery` 分区的
+容量警告不代表 factory 分区已满。保留 `0x700000` 的出厂恢复镜像，不要向该分区写入本应用。
+
 设备名为 `Codex-<MAC 后缀>`。首次加密连接时 Passport 会显示六位配对码，请在
 操作系统的蓝牙配对窗口中输入。
 
 ## 运行本机桥接器
 
-请先安装并登录 Codex CLI，建议使用 Python 3.10 或更高版本：
+以下命令行示例使用 BLE。请先安装并登录 Codex CLI，使用 Python 3.10 或更高版本。命令适用于 macOS/Linux；Windows 可使用上面的源码启动脚本，或使用 `.venv\Scripts\python.exe` 并通过 `-m pip` 安装依赖：
 
 ```bash
 python3 -m venv .venv
@@ -111,21 +125,25 @@ python3 tools/codex_bridge.py --device Codex-A1B2C3
 设置菜单仅保留屏幕亮度、声音、自动睡眠、蓝牙、Wi-Fi、无线网络、伙伴形象和重置（另有返回项）。重置子菜单保留恢复出厂设置、解除蓝牙配对和返回；两项重置操作仍需设备端确认。已移除无实际效果的指示灯、任务记录、时钟旋转和删除自定义角色入口。此菜单精简需要更新设备固件。
 
 - `UP`：在首页、用量页、信息页之间切换。
-- `DOWN`：滚动或切换子页面。
+- `DOWN`：首页切换录音，用量页和信息页切换子页面，菜单内移动选项。语音转发需要另行完成语音设置。
 - 长按 `OK`：打开菜单。
-- Settings → Unpair：经设备端确认后删除 BLE 绑定。
+- 设置 → 重置 → 解除蓝牙配对：经设备端确认后删除 BLE 绑定。
 
 ## 测试
+
+先进入 ESP-IDF 5.5.3 环境，确保已设置 `IDF_PATH`。Python 测试需使用已安装控制台开发依赖的环境。
 
 ```bash
 cmake -S tests -B build-host
 cmake --build build-host
 ctest --test-dir build-host --output-on-failure
-python3 -m unittest tests/test_codex_bridge.py
+python3 -m unittest discover -s tests -p "test_*.py"
 ```
 
-固件编译成功不等于真机验收。真机还需分别验证配对、两个用量窗口、重置倒计时、
-运行/就绪状态、完成庆祝提示、断线重连、电池显示和 BLE 长连接稳定性。
+固件编译成功不等于真机验收。真机还需分别验证安全配对、实际返回的用量窗口及窗口缺失、
+重置倒计时、运行/就绪状态、完成与中断提示、断线重连、电池显示和 BLE/LAN 稳定性。
+至少执行 20 次连接/断开循环及 30 分钟持续连接，记录堆内存、看门狗、分配失败与传输错误。
+未执行的真机检查标记为 `NOT RUN`，完整范围见[发布检查](docs/RELEASE_CHECKLIST.md)。
 
 ## 致谢
 
@@ -145,19 +163,19 @@ python3 -m unittest tests/test_codex_bridge.py
 
 ### 自动息屏
 
-默认连续空闲 5 分钟关闭背光并暂停界面动画重绘，蓝牙与用量同步继续运行。新任务、实时任务完成、配对码或待确认操作会亮屏；运行中或等待处理的任务保持亮屏。普通空闲心跳和重复完成事件不重置计时。
+默认连续空闲 5 分钟关闭背光并暂停界面动画重绘，蓝牙与用量同步继续运行。新任务、实时任务完成、配对码或待确认操作会亮屏；运行中或等待处理的任务保持亮屏，到达设定时间后自动调暗至 20%。普通空闲心跳和重复完成事件不重置计时。
 
-设置菜单的 **Auto sleep** 可选 **1 min / 5 min / 10 min / Never**，断电保存。任意键点击或长按可唤醒，唤醒的这一次操作不执行其他功能。亮屏恢复之前设置的亮度。此功能关闭背光，不进入会中断蓝牙的深度睡眠。
+设置菜单的 **自动睡眠** 可选 **1 分钟 / 5 分钟 / 10 分钟 / 永不**，断电保存。任意键点击或长按可唤醒，唤醒的这一次操作不执行其他功能。亮屏恢复之前设置的亮度。此功能关闭背光，不进入会中断蓝牙的深度睡眠。
 
 蓝牙状态中的 `sys.screen_off` 报告息屏状态，`sys.sleep_mode` 的 0/1/2/3 分别对应 1/5/10 分钟及永不息屏。
 
 ### 完成提示音
 
-任务完成后播放一次约 0.18 秒的轻柔双音。长按确认键打开菜单，进入设置 → 声音，可循环切换 Off / On / Auto，并保存到设备。
+任务完成后播放一次约 0.18 秒的轻柔双音。长按确认键打开菜单，进入设置 → 声音，可循环切换关闭 / 开启 / 自动，并保存到设备。
 
-- Off：始终静音。
-- On：全天提示。
-- Auto（默认）：按电脑同步的本地时间，在 22:00–08:00 静音；未同步时间时也不响。
+- 关闭（Off）：始终静音。
+- 开启（On）：全天提示。
+- 自动（Auto，默认）：按电脑同步的本地时间，在 22:00–08:00 静音；未同步时间时也不响。
 
 重复心跳不重复响铃，断线重连不补响旧任务。密集完成事件合并提醒；提示音由独立音频任务播放。
 
