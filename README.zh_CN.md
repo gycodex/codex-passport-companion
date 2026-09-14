@@ -2,6 +2,7 @@
 
 **简体中文** · [English](README.md)
 
+
 这个固件把 FoloToy AI Passport 变成一个注重隐私的 Codex 桌面伙伴：显示当前
 接口实际返回的用量窗口剩余比例（例如 7 天）、以进度条展示余量、显示正在进行的任务数，并在
 Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首页右上角同时显示电量。
@@ -30,10 +31,10 @@ Codex 生成最终答复时显示 6 秒钟的 **任务已完成** 提示。首�
 
 ## 快速开始
 
-使用 **`feature/lan-connection`** 分支：
+使用 **`main`** 分支：
 
 ```sh
-git clone --branch feature/lan-connection https://github.com/gycodex/codex-passport-companion.git
+git clone --branch main https://github.com/gycodex/codex-passport-companion.git
 cd codex-passport-companion
 ```
 

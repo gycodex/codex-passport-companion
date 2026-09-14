@@ -2,6 +2,7 @@
 
 [简体中文](README.zh_CN.md) · **English**
 
+
 This firmware turns FoloToy AI Passport into a private Codex desk companion. It shows the
 remaining share of the Codex usage windows actually returned by the service as progress bars, shows the
 number of active tasks, and displays a six-second **Task complete** celebration when Codex
@@ -40,7 +41,7 @@ and reconnect behavior. A local bridge translates Codex data into the device pro
 
 ## Quick start
 
-Use the **`feature/lan-connection`** branch. Flash its firmware using ESP-IDF 5.5.3, install Python 3.10+ and the Codex CLI, and sign in to Codex. On Windows, double-click `start-console.vbs` (`start-console.cmd` shows startup errors); on macOS, run `bash start-console.command`.
+Use the **`main`** branch. Flash its firmware using ESP-IDF 5.5.3, install Python 3.10+ and the Codex CLI, and sign in to Codex. On Windows, double-click `start-console.vbs` (`start-console.cmd` shows startup errors); on macOS, run `bash start-console.command`.
 
 In the local page, select Bluetooth (scan and secure pairing) or LAN (device IP and pairing JSON). Both transports support usage, task status, reminders and microphone forwarding. For voice, install a virtual audio cable and configure your input method; this is not a native Bluetooth headset.
 
