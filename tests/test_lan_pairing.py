@@ -10,13 +10,34 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
-from lan_pairing import Pairing, derive, parse_discovery
+from lan_pairing import Pairing, derive, parse_discovery, discover
+from unittest.mock import patch, AsyncMock, MagicMock
+import socket
+from types import SimpleNamespace
 
 DOMAIN = b'FAP-PAIR-1:'
 IDENTITY = '001122aabbcc'
 PSK = bytes(range(32))
 
 class DiscoveryTests(unittest.TestCase):
+    def test_targeted_discovery_validates_and_sends_only_to_target(self):
+        for host in ('bad', '8.8.8.8', '127.0.0.1', '0.0.0.0', '224.0.0.1'):
+            with self.assertRaises(ValueError):
+                asyncio.run(discover(host=host))
+
+        async def check():
+            loop = asyncio.get_running_loop()
+            send = AsyncMock()
+            receive = AsyncMock(side_effect=asyncio.TimeoutError)
+            socket_module = SimpleNamespace(**vars(socket))
+            socket_module.socket = MagicMock()
+            with patch('lan_pairing.socket', socket_module):
+                with patch.object(loop, 'sock_sendto', send), patch.object(loop, 'sock_recvfrom', receive):
+                    self.assertEqual(await discover(host='10.99.5.232'), [])
+            self.assertEqual(send.await_count, 1)
+            self.assertEqual(send.call_args.args[2], ('10.99.5.232', 8764))
+        asyncio.run(check())
+
     def test_valid_and_untrusted_discovery(self):
         value = dict(app='passport', v=1, nonce='ab'*8, id=IDENTITY, port=8765, pair=True)
         self.assertEqual(parse_discovery(json.dumps(value), '192.168.1.2', value['nonce'])['name'], 'Passport-AABBCC')

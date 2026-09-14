@@ -28,7 +28,15 @@ def parse_discovery(payload, address, nonce):
                 name='Passport-' + value['id'][-6:].upper(), available=value['pair'])
 
 
-async def discover(timeout=2.5):
+async def discover(timeout=2.5, host=None):
+    if host is not None:
+        try:
+            address = ipaddress.IPv4Address(host)
+        except (ValueError, TypeError):
+            raise ValueError("请输入有效的局域网 IPv4 地址") from None
+        if not address.is_private or address.is_loopback or address.is_unspecified or address.is_multicast:
+            raise ValueError("请输入有效的局域网 IPv4 地址")
+        host = str(address)
     nonce = secrets.token_hex(8)
     request = ('FAP_DISCOVER1 ' + nonce).encode()
     destinations = {'255.255.255.255'}
@@ -40,6 +48,8 @@ async def discover(timeout=2.5):
                 network = ipaddress.IPv4Network(f'{address.address}/{address.netmask}', strict=False)
                 if not network.is_loopback and ipaddress.IPv4Address(address.address).is_private:
                     destinations.add(str(network.broadcast_address))
+    if host is not None:
+        destinations = {host}
     loop = asyncio.get_running_loop()
     result = {}
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -57,7 +67,7 @@ async def discover(timeout=2.5):
             try:
                 payload, peer = await asyncio.wait_for(loop.sock_recvfrom(sock, 257), deadline - loop.time())
                 count += 1
-                if peer[1] != DISCOVERY_PORT:
+                if peer[1] != DISCOVERY_PORT or (host is not None and peer[0] != host):
                     continue
                 item = parse_discovery(payload, peer[0], nonce)
                 result[(item['id'], item['host'])] = item

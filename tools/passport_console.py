@@ -168,7 +168,7 @@ class Controller:
             raise ValueError("请先完成或取消当前配对")
         if name == "scan_lan":
             from lan_pairing import discover
-            self.lan_devices = await discover()
+            self.lan_devices = await discover(host=data["host"]) if data.get("host") else await discover()
             self.lan_scan_at = time.monotonic()
             return {"devices": self.lan_devices}
         if name == "pair_start":

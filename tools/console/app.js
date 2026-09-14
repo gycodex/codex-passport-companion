@@ -129,19 +129,21 @@ $('close-settings').onclick=()=>{editing=false;renderNavigation(lastState);};
 $('quick-connect').onclick=()=>operation(async()=>{const result=await api('connect',{});$('authorize').hidden=!result.needs_authorization;if(result.needs_authorization){editing=true;notice('语音输入需要授权，请点击“授权并连接”。');}else notice('正在连接已保存的设备…');});
 window.addEventListener('pywebviewready',()=>{$('lifecycle-hint').textContent='关闭窗口后在托盘继续运行；右键托盘图标可以退出。';});
 
-$('scan-lan').onclick=()=>operation(async()=>{
+async function scanLan(host='') { return operation(async()=>{
   $('scan-lan').disabled=true;
-  $('lan-scan-result').textContent='正在寻找同一网络中的 Passport…';
+  $('lan-scan-result').textContent=host?'正在查找指定 IP 的 Passport…':'正在寻找同一网络中的 Passport…';
   try {
-    const result=await api('scan_lan',{});lanDevices=result.devices;
+    const result=await api('scan_lan',host?{host}:{});lanDevices=result.devices;
     $('lan-devices').replaceChildren(new Option('请选择你的设备',''));
     for(let i=0;i<lanDevices.length;i++) $('lan-devices').append(new Option(lanDevices[i].name+(lanDevices[i].available?'':' · 已被连接'),String(i)));
     $('lan-devices-label').hidden=!lanDevices.length;
     $('pair-lan').hidden=!lanDevices.length;
     if(lanDevices.length===1)$('lan-devices').value='0';
-    $('lan-scan-result').textContent=lanDevices.length?'找到设备。请选择要配对的那一台。':'未找到设备。请确认设备已连上同一路由器、使用支持直接配对的新固件；访客网络可能阻止发现。旧固件可展开手动连接。';
+    $('lan-scan-result').textContent=lanDevices.length?'找到设备。请选择要配对的那一台。':(host?'该 IP 未响应。请检查设备地址、网络连通性和固件版本。':'未找到设备。跨子网可展开“按 IP 查找”；旧固件可展开手动连接。');
   }finally{$('scan-lan').disabled=false;}
-});
+});}
+$('scan-lan').onclick=()=>scanLan();
+$('find-lan-ip').onclick=()=>{const host=$('discover-host').value.trim();if(!host){notice('请输入设备 IP 地址',true);return;}return scanLan(host);};
 $('pair-lan').onclick=()=>operation(async()=>{
   const value=$('lan-devices').value;
   if(value==='')throw Error('请选择你的设备');
@@ -160,10 +162,10 @@ function renderPairing(state){
   $('connect').disabled=Boolean(pending);$('save').disabled=Boolean(pending);
   $('pair-panel').hidden=!pending;
   if(pending){pairSession=pair.id;$('pair-code').textContent=pair.code;$('pair-confirm').disabled=pair.status==='waiting_device';$('pair-instruction').textContent=pair.status==='waiting_device'?'电脑已确认，请在设备上按 OK；未操作会自动超时。':'核对两端号码，一致时在设备上按 OK，并点击下方确认。不同则取消。';}
-  for(const element of document.querySelectorAll('#settings input,#settings select,#scan,#scan-lan,#pair-lan,#connect,#save')) {
+  for(const element of document.querySelectorAll('#settings input,#settings select,#scan,#scan-lan,#find-lan-ip,#pair-lan,#connect,#save')) {
     if(pending)element.disabled=true;
   }
-  if(!pending){$('scan-lan').disabled=false;$('pair-lan').disabled=false;}
+  if(!pending){$('find-lan-ip').disabled=false;$('scan-lan').disabled=false;$('pair-lan').disabled=false;}
   $('paired-state').textContent=state.key_present?'✓ 已保存配对，之后可直接连接。':'';
   if(pair?.status==='error')notice(pair.message,true);
 }

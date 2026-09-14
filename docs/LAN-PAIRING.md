@@ -56,3 +56,7 @@ is not a certificate. Existing paired computers retain access because the shared
 PSK is not rotated by this flow. Device reset/USB reconfiguration remain the means
 to replace it. Hardware RAM, entropy, button behavior, and long-duration operation
 require physical acceptance testing in addition to host tests and compilation.
+
+## 跨子网按 IP 查找
+
+自动广播搜索不到设备时，在电脑端展开“跨子网 / 按 IP 查找”，填写设备无线网络页面的 IPv4 地址，点击“按 IP 查找并配对”。找到后仍需核对两端六位码并确认，不需要配对文件。要求电脑可访问设备的 UDP 8764 和 TCP 8765；这不会绕过路由器隔离。
