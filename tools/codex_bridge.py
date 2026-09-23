@@ -26,6 +26,7 @@ USAGE_CACHE_FILE = "ai-passport-usage-cache.json"
 SESSION_PRIME_BYTES = 2 * 1024 * 1024
 SESSION_ACTIVE_LOOKBACK_SECONDS = 2 * 60 * 60
 INTERRUPTION_NOTICE_SECONDS = 6.0
+MAX_RECONNECT_ATTEMPTS = 3
 
 
 class CodexAppServer:
@@ -603,6 +604,7 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
         if args.dry_run:
             print(heartbeat_payload(usage, watcher, running_count).decode().rstrip())
             return
+        reconnect_attempts = 0
         while not (control is not None and getattr(control, "stop_requested", False)):
             try:
                 report("connecting")
@@ -628,6 +630,7 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                     # Establish the session baseline before enabling test alerts.
                     await send_payload(client, heartbeat_payload(usage, watcher, running_count))
                     report("connected", usage=usage, running=running_count, synced_at=time.time())
+                    connected_since = time.monotonic()
                     from voice_bridge import voice_session
                     async with voice_session(client, control):
                         while client.is_connected and not (control is not None and getattr(control, "stop_requested", False)):
@@ -648,6 +651,9 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                             completed = watcher.completion_sequence > previous_sequence
                             previous_sequence = watcher.completion_sequence
                             now = time.monotonic()
+                            # A link that drops immediately is still a failed reconnect.
+                            if now - connected_since >= HEARTBEAT_SECONDS:
+                                reconnect_attempts = 0
                             if roll_expired_usage_windows(usage):
                                 save_cached_usage(usage_cache_path, usage)
                                 changed = True
@@ -696,11 +702,20 @@ async def bridge_loop(args: argparse.Namespace, control=None) -> None:
                                 if completed:
                                     report("completion", message="Completion sent; sound follows device volume and quiet hours")
                             await asyncio.sleep(1.0)
+                if not (control is not None and getattr(control, "stop_requested", False)):
+                    raise ConnectionError("设备连接已断开")
             except Exception as error:  # BLE backend errors vary by operating system.
                 if control is not None and getattr(control, "stop_requested", False):
                     break
-                report("retrying", message=f"{type(error).__name__}: {error}" or "连接中断")
-                print(f"Bridge disconnected: {error}. Retrying…", file=sys.stderr, flush=True)
+                if reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
+                    report("error", reconnect_exhausted=True)
+                    print(f"Bridge stopped after {MAX_RECONNECT_ATTEMPTS} failed reconnect attempts: {type(error).__name__}",
+                          file=sys.stderr, flush=True)
+                    break
+                reconnect_attempts += 1
+                report("retrying", reconnect_attempt=reconnect_attempts)
+                print(f"Bridge disconnected: {type(error).__name__}. Reconnecting {reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS}…",
+                      file=sys.stderr, flush=True)
                 await asyncio.sleep(3.0)
     finally:
         await app_server.close()

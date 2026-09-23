@@ -59,13 +59,14 @@ class Backend:
         # Loopback requests must never be routed through an environment proxy.
         self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-    def request(self, path, data=None):
+    def request(self, path, data=None, timeout=None):
         headers = {"X-Passport-Token": self.token or ""}
         if data is not None:
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(self.url + path,
             data=None if data is None else json.dumps(data).encode(), headers=headers)
-        with self.http.open(request, timeout=20 if data is not None else 2) as response:
+        limit = timeout if timeout is not None else (20 if data is not None else 2)
+        with self.http.open(request, timeout=limit) as response:
             return json.load(response)
 
     def attach(self):
@@ -117,14 +118,19 @@ class Backend:
     def stop(self):
         try:
             self.attach()
-        except urllib.error.HTTPError:
-            raise
-        except (OSError, urllib.error.URLError):
-            # No listener means there is no reachable service to disconnect.
+            self.request("api/exit", {}, timeout=5)
+        finally:
+            # Only a child started by this desktop instance may be terminated.
             if self.process and self.process.poll() is None:
-                raise RuntimeError("后台仍在启动或没有响应，请稍后重试退出。")
-            return
-        self.request("api/exit", {})
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.process.kill()
+                        self.process.wait(timeout=2)
 
 
 def icon_image():
@@ -200,15 +206,15 @@ class Desktop:
             return
         try:
             self.backend.stop()
-            self.finished.set()
-            self.window.destroy()
         except Exception:
-            self.show()
-            self.window.create_confirmation_dialog("暂时无法退出", "后台未确认断开。请稍后重试；详细原因见 desktop.log。")
             import traceback
             traceback.print_exc()
         finally:
-            self.quitting.release()
+            try:
+                self.finished.set()
+                self.window.destroy()
+            finally:
+                self.quitting.release()
 
     def watch(self):
         while not self.finished.wait(2):

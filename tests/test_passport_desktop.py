@@ -1,6 +1,7 @@
 """Desktop lifecycle tests; no UI, hardware, account or startup registry changes."""
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import threading
@@ -49,7 +50,7 @@ class BackendTests(unittest.TestCase):
         self.client.start()
         with patch.object(self.controller, "submit", wraps=self.controller.submit) as submit:
             self.client.stop()
-            submit.assert_called_once_with("disconnect", {})
+            submit.assert_called_once_with("disconnect", {}, timeout=5)
         self.thread.join(3)
         self.assertFalse(self.thread.is_alive())
 
@@ -69,6 +70,29 @@ class BackendTests(unittest.TestCase):
                 self.client.start()
             request.assert_called_once_with("health")
             spawn.assert_not_called()
+
+    def test_unresponsive_owned_backend_is_terminated(self):
+        process = Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = [subprocess.TimeoutExpired("backend", 2), 0]
+        self.client.process = process
+        with patch.object(self.client, "attach", side_effect=OSError("offline")):
+            with self.assertRaises(OSError):
+                self.client.stop()
+        process.terminate.assert_called_once()
+        process.kill.assert_not_called()
+
+    def test_owned_backend_is_killed_if_terminate_stalls(self):
+        process = Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = [subprocess.TimeoutExpired("backend", 2),
+                                    subprocess.TimeoutExpired("backend", 2), 0]
+        self.client.process = process
+        with patch.object(self.client, "attach", side_effect=OSError("offline")):
+            with self.assertRaises(OSError):
+                self.client.stop()
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
 
 
 class DesktopLifecycleTests(unittest.TestCase):
@@ -91,13 +115,12 @@ class DesktopLifecycleTests(unittest.TestCase):
         self.assertTrue(self.desktop.finished.is_set())
         self.assertIsNone(self.desktop.closing())
 
-    def test_failed_exit_keeps_window_reachable(self):
+    def test_failed_backend_stop_still_closes_window(self):
         self.desktop.backend.stop.side_effect = OSError("busy")
         with patch("traceback.print_exc"):
             self.desktop.quit()
-        self.assertFalse(self.desktop.finished.is_set())
-        self.desktop.window.destroy.assert_not_called()
-        self.desktop.window.show.assert_called_once()
+        self.assertTrue(self.desktop.finished.is_set())
+        self.desktop.window.destroy.assert_called_once()
 
 
 class SetupPersistenceTests(unittest.TestCase):

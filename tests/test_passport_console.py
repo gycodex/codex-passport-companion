@@ -67,8 +67,15 @@ class ConsoleTests(unittest.TestCase):
         with patch.object(self.controller, 'submit', wraps=self.controller.submit) as submit:
             code, _ = self.request('/api/exit', {}, **{'X-Passport-Token': self.server.token})
             self.assertEqual(code, 200)
-            submit.assert_called_once_with('disconnect', {})
+            submit.assert_called_once_with('disconnect', {}, timeout=5)
             self.assertEqual(self.controller.snapshot()['status'], 'disconnected')
+
+    def test_exit_shuts_down_even_when_disconnect_fails(self):
+        with patch.object(self.controller, 'submit', side_effect=TimeoutError):
+            code, _ = self.request('/api/exit', {}, **{'X-Passport-Token': self.server.token})
+        self.assertEqual(code, 200)
+        self.thread.join(3)
+        self.assertFalse(self.thread.is_alive())
 
     def test_windows_npm_launcher_resolves_to_native_executable(self):
         root = Path(self.temp.name)

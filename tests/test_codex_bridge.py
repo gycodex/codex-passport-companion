@@ -18,6 +18,67 @@ SPEC.loader.exec_module(codex_bridge)
 
 
 class CodexBridgeTests(unittest.TestCase):
+    def test_stops_after_three_failed_reconnects(self) -> None:
+        attempts = []
+        reports = []
+
+        @asynccontextmanager
+        async def unavailable(_args):
+            attempts.append(1)
+            raise ConnectionError("offline")
+            yield
+
+        async def exercise(directory):
+            server = SimpleNamespace(start=AsyncMock(), close=AsyncMock(),
+                                     rate_limits=AsyncMock(return_value={}),
+                                     running_task_count=AsyncMock(return_value=0))
+            control = SimpleNamespace(stop_requested=False,
+                                      report=lambda kind, **data: reports.append((kind, data)))
+            with patch.dict(codex_bridge.os.environ, {"CODEX_HOME": directory}), \
+                 patch.object(codex_bridge, "CodexAppServer", return_value=server), \
+                 patch.object(codex_bridge, "open_transport", unavailable), \
+                 patch.object(codex_bridge.asyncio, "sleep", new_callable=AsyncMock):
+                await codex_bridge.bridge_loop(SimpleNamespace(codex="unused", dry_run=False), control)
+            server.close.assert_awaited_once()
+
+        with tempfile.TemporaryDirectory() as directory:
+            asyncio.run(exercise(directory))
+        self.assertEqual(len(attempts), 4)  # Initial connection, then three retries.
+        self.assertEqual([data["reconnect_attempt"] for kind, data in reports if kind == "retrying"], [1, 2, 3])
+        self.assertEqual([data for kind, data in reports if kind == "error"], [{"reconnect_exhausted": True}])
+
+    def test_immediate_disconnects_consume_reconnect_budget(self) -> None:
+        attempts = []
+        reports = []
+
+        @asynccontextmanager
+        async def unstable(_args):
+            attempts.append(1)
+            yield SimpleNamespace(is_connected=False, send_payload=AsyncMock())
+
+        @asynccontextmanager
+        async def no_voice(_client, _control):
+            yield
+
+        async def exercise(directory):
+            server = SimpleNamespace(start=AsyncMock(), close=AsyncMock(),
+                                     rate_limits=AsyncMock(return_value={}),
+                                     running_task_count=AsyncMock(return_value=0))
+            control = SimpleNamespace(stop_requested=False,
+                                      report=lambda kind, **data: reports.append(kind))
+            with patch.dict(codex_bridge.os.environ, {"CODEX_HOME": directory}), \
+                 patch.dict(sys.modules, {"voice_bridge": SimpleNamespace(voice_session=no_voice)}), \
+                 patch.object(codex_bridge, "CodexAppServer", return_value=server), \
+                 patch.object(codex_bridge, "open_transport", unstable), \
+                 patch.object(codex_bridge.asyncio, "sleep", new_callable=AsyncMock):
+                await codex_bridge.bridge_loop(SimpleNamespace(codex="unused", dry_run=False), control)
+
+        with tempfile.TemporaryDirectory() as directory:
+            asyncio.run(exercise(directory))
+        self.assertEqual(len(attempts), 4)
+        self.assertEqual(reports.count("retrying"), 3)
+        self.assertEqual(reports.count("error"), 1)
+
     def test_live_interruption_updates_count_even_when_server_refresh_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)

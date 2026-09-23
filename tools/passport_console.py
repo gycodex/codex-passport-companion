@@ -1,6 +1,7 @@
 """Local-only browser control panel. Run with Python 3.10 or newer."""
 import argparse
 import asyncio
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from collections import deque
 import copy
 import hmac
@@ -141,11 +142,16 @@ class Controller:
         with self.lock:
             if kind in ("starting", "connecting", "connected", "retrying", "disconnected", "error", "stopping"):
                 self.state["status"] = kind
-            self.state.update({k: v for k, v in data.items() if k != "message"})
+            self.state.update({k: v for k, v in data.items()
+                               if k not in ("message", "reconnect_attempt", "reconnect_exhausted")})
             if kind != "synced":
                 # Backend exceptions can contain transport details; expose only their class.
                 message = data.get("message", kind)
-                if kind in ("retrying", "error"):
+                if kind == "retrying" and type(data.get("reconnect_attempt")) is int:
+                    message = f"正在重连设备（{data['reconnect_attempt']}/3）"
+                elif kind == "error" and data.get("reconnect_exhausted") is True:
+                    message = "重连三次仍失败，已停止；请检查设备后手动连接"
+                elif kind in ("retrying", "error"):
                     message = message.split(":", 1)[0] + ": check device, network and Codex login"
                 self.logs.append(dict(at=time.time(), kind=kind, message=message[:240]))
 
@@ -360,12 +366,19 @@ class Controller:
         except Exception as error:
             self.report("error", message=type(error).__name__)
 
-    def submit(self, name, data):
-        return asyncio.run_coroutine_threadsafe(self.action(name, data), self.loop).result(timeout=35)
+    def submit(self, name, data, timeout=35):
+        future = asyncio.run_coroutine_threadsafe(self.action(name, data), self.loop)
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeoutError:
+            future.cancel()
+            raise
 
     def close(self):
         try:
-            self.submit("disconnect", {})
+            self.submit("disconnect", {}, timeout=5)
+        except Exception:
+            pass
         finally:
             self.loop.call_soon_threadsafe(self.loop.stop)
             self.thread.join(timeout=5)
@@ -450,9 +463,16 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict) or not self.path.startswith("/api/"):
                 raise ValueError("Invalid request")
             if self.path == "/api/exit":
-                self.server.controller.submit("disconnect", {})
-                self.reply(200, {"ok": True})
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                self.server.controller.stop_requested = True
+                try:
+                    self.server.controller.submit("disconnect", {}, timeout=5)
+                except Exception:
+                    # The process is exiting; a stuck transport cannot veto it.
+                    pass
+                try:
+                    self.reply(200, {"ok": True})
+                finally:
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
             if self.path == "/api/authorize":
                 from console_setup import launch, needs_setup
