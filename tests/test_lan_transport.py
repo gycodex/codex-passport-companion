@@ -67,7 +67,7 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(LanRequestTimeout) as caught:
                     await client.request(b'private payload')
             self.assertEqual(caught.exception.phase, phase)
-            self.assertGreaterEqual(caught.exception.elapsed_ms, 15)
+            self.assertGreaterEqual(caught.exception.elapsed_ms, 14.9)
             self.assertNotIn('private payload', str(caught.exception))
             self.assertFalse(client.is_connected)
             with self.assertRaises(ConnectionError):

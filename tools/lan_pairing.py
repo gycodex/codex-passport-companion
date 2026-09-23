@@ -28,6 +28,20 @@ def parse_discovery(payload, address, nonce):
                 name='Passport-' + value['id'][-6:].upper(), available=value['pair'])
 
 
+async def send_discovery(loop, sock, payload, destination):
+    if hasattr(loop, 'sock_sendto') and hasattr(loop, 'sock_recvfrom'):
+        return await loop.sock_sendto(sock, payload, destination)
+    # Python 3.10 lacks asyncio UDP sendto/recvfrom on some event loops.
+    return await asyncio.to_thread(sock.sendto, payload, destination)
+
+
+async def receive_discovery(loop, sock, limit, timeout):
+    if hasattr(loop, 'sock_sendto') and hasattr(loop, 'sock_recvfrom'):
+        return await asyncio.wait_for(loop.sock_recvfrom(sock, limit), timeout)
+    sock.settimeout(timeout)
+    return await asyncio.to_thread(sock.recvfrom, limit)
+
+
 async def discover(timeout=2.5, host=None):
     if host is not None:
         try:
@@ -55,17 +69,21 @@ async def discover(timeout=2.5, host=None):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.bind(('0.0.0.0', 0))
-        sock.setblocking(False)
+        native_udp = hasattr(loop, 'sock_sendto') and hasattr(loop, 'sock_recvfrom')
+        if native_udp:
+            sock.setblocking(False)
+        else:
+            sock.settimeout(timeout)
         for address in sorted(destinations)[:16]:
             try:
-                await loop.sock_sendto(sock, request, (address, DISCOVERY_PORT))
+                await send_discovery(loop, sock, request, (address, DISCOVERY_PORT))
             except OSError:
                 continue
         deadline = loop.time() + timeout
         count = 0
         while loop.time() < deadline and count < 128 and len(result) < 16:
             try:
-                payload, peer = await asyncio.wait_for(loop.sock_recvfrom(sock, 257), deadline - loop.time())
+                payload, peer = await receive_discovery(loop, sock, 257, deadline - loop.time())
                 count += 1
                 if peer[1] != DISCOVERY_PORT or (host is not None and peer[0] != host):
                     continue
@@ -73,7 +91,7 @@ async def discover(timeout=2.5, host=None):
                 result[(item['id'], item['host'])] = item
             except (ValueError, KeyError, TypeError):
                 continue
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, socket.timeout):
                 break
     return list(result.values())
 

@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
-from lan_pairing import Pairing, derive, parse_discovery, discover
+from lan_pairing import Pairing, derive, parse_discovery, discover, send_discovery, receive_discovery
 from unittest.mock import patch, AsyncMock, MagicMock
 import socket
 from types import SimpleNamespace
@@ -32,10 +32,22 @@ class DiscoveryTests(unittest.TestCase):
             socket_module = SimpleNamespace(**vars(socket))
             socket_module.socket = MagicMock()
             with patch('lan_pairing.socket', socket_module):
-                with patch.object(loop, 'sock_sendto', send), patch.object(loop, 'sock_recvfrom', receive):
+                with patch.object(loop, 'sock_sendto', send, create=True), patch.object(loop, 'sock_recvfrom', receive, create=True):
                     self.assertEqual(await discover(host='10.99.5.232'), [])
             self.assertEqual(send.await_count, 1)
             self.assertEqual(send.call_args.args[2], ('10.99.5.232', 8764))
+        asyncio.run(check())
+
+    def test_discovery_works_without_asyncio_udp_methods(self):
+        async def check():
+            loop = SimpleNamespace()
+            sock = MagicMock()
+            sock.recvfrom.return_value = (b'reply', ('10.99.5.232', 8764))
+            await send_discovery(loop, sock, b'hello', ('10.99.5.232', 8764))
+            self.assertEqual(await receive_discovery(loop, sock, 257, .1),
+                             (b'reply', ('10.99.5.232', 8764)))
+            sock.sendto.assert_called_once_with(b'hello', ('10.99.5.232', 8764))
+            sock.settimeout.assert_called_once_with(.1)
         asyncio.run(check())
 
     def test_valid_and_untrusted_discovery(self):
