@@ -9,9 +9,9 @@ writes a final answer. The top-right status area also shows the battery level.
 
 Window labels follow the reported duration; absent windows are hidden instead of appearing as 100% remaining.
 
-Current branch firmware version: **0.2.4** (prerelease).
+Current branch firmware version: **0.2.5** (prerelease).
 
-**[Download the Windows all-in-one ZIP](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.4/Passport-Windows-x64-v0.2.4.zip)** — extract it, upgrade the device with the included executable if needed, then open `Passport.exe`. No Python installation is needed. The package includes firmware, a backup-and-verify USB updater, and a short getting-started guide. See [downloads](docs/DOWNLOADS.md) and [release notes](docs/releases/v0.2.4.md).
+**[Download the Windows all-in-one ZIP](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.5/Passport-Windows-x64-v0.2.5.zip)** — extract it, upgrade the device with the included executable if needed, then open `Passport.exe`. No Python installation is needed. The package includes firmware, a backup-and-verify USB updater, and a short getting-started guide. See [downloads](docs/DOWNLOADS.md) and [release notes](docs/releases/v0.2.5.md).
 
 The computer bridge recognizes `turn_aborted` session events: it retires only the matching
 turn and briefly displays **Task interrupted** on the home page for about six seconds.
@@ -28,7 +28,7 @@ The first live Codex heartbeat after connecting or reconnecting over BLE/LAN pla
 
 **Windows desktop app from source:** run `install-passport.cmd` to create a Passport shortcut, or open `start-console.vbs` directly. The desktop window provides first-run setup, a status dashboard, a system tray and optional sign-in startup. No firmware reflash is needed for this change. See [desktop guide](docs/DESKTOP.md). The browser fallback is `start-browser.cmd`; macOS still uses `bash start-console.command`.
 
-**Standalone EXE:** `python tools/build_windows_exe.py` produces `dist/windows-exe/Passport.exe` and a ZIP with notices after installing `tools/requirements-build-exe.txt`. The executable needs neither Python nor the source tree. Windows x64 and WebView2 Runtime are required. The v0.2.4 all-in-one package includes the desktop executable and matching firmware for automatic pairing.
+**Standalone EXE:** `python tools/build_windows_exe.py` produces `dist/windows-exe/Passport.exe` and a ZIP with notices after installing `tools/requirements-build-exe.txt`. The executable needs neither Python nor the source tree. Windows x64 and WebView2 Runtime are required. The v0.2.5 all-in-one package includes the desktop executable and matching firmware for automatic pairing.
 
 **LAN support:** the firmware supports encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 

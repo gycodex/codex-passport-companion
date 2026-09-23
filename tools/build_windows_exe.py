@@ -52,7 +52,7 @@ def main():
     source_hashes = {str(p.relative_to(ROOT)).replace('\\', '/'): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((ROOT / 'tools').rglob('*'))
                      if p.is_file() and '__pycache__' not in p.parts and p.suffix in ('.py', '.html', '.js', '.css', '.ico', '.spec', '.txt')}
-    manifest = dict(version='0.2.4', built_at=datetime.now(timezone.utc).isoformat(),
+    manifest = dict(version='0.2.5', built_at=datetime.now(timezone.utc).isoformat(),
                     base_commit=revision, uncommitted_sources=dirty, source_sha256=source_hashes,
                     python=platform.python_version(), architecture=platform.machine())
     (notices / 'BUILD.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')

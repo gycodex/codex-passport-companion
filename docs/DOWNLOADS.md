@@ -1,8 +1,8 @@
-# v0.2.4 下载与安装
+# v0.2.5 下载与安装
 
-**推荐普通 Windows 用户下载 [Passport-Windows-x64-v0.2.4.zip](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.4/Passport-Windows-x64-v0.2.4.zip)**，不要选页面自动生成的 Source code。
+**推荐普通 Windows 用户下载 [Passport-Windows-x64-v0.2.5.zip](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.5/Passport-Windows-x64-v0.2.5.zip)**，不要选页面自动生成的 Source code。
 
-[发布页](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.4) · [三步上手](QUICKSTART.zh_CN.md) · [版本说明](releases/v0.2.4.md)
+[发布页](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.5) · [三步上手](QUICKSTART.zh_CN.md) · [版本说明](releases/v0.2.5.md)
 
 这是预发布版，适用于 Windows 10/11 x64、FoloToy AI Passport（ESP32-C3、8 MB Flash）。
 
@@ -36,7 +36,7 @@
 
 ```powershell
 python -m pip install -r tools/requirements-build-exe.txt
-python tools/build_easy_release.py --firmware-dir build-release --idf-dir $env:IDF_PATH --output dist/release-v0.2.4
+python tools/build_easy_release.py --firmware-dir build-release --idf-dir $env:IDF_PATH --output dist/release-v0.2.5
 ```
 
 输出目录必须不存在。脚本检查版本一致性和干净工作区，构建两个 EXE，保留依赖许可证并生成一体 ZIP 和校验值。

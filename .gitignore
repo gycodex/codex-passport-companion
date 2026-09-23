@@ -9,6 +9,7 @@ dependencies.lock
 .venv-bridge/
 .venv-console/
 .venv-flash/
+.venv-release/
 backups/
 .venv-console-backup-*/
 __pycache__/
