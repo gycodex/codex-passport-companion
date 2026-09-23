@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from collections import deque
 from pathlib import Path
 import sys
 import struct
@@ -9,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from voice_bridge import decode_packet, decode_adpcm, parse_shortcut, voice_loop, voice_session
+from voice_bridge import AudioOutput, decode_packet, decode_adpcm, parse_shortcut, voice_loop, voice_session
 
 
 def packet(**changes):
@@ -20,6 +21,37 @@ def packet(**changes):
 
 
 class AudioThreadTests(unittest.TestCase):
+    def test_output_prebuffers_after_start_and_network_gap(self):
+        output = AudioOutput.__new__(AudioOutput)
+        output.lock = threading.Lock()
+        output.queue = deque()
+        output.buffered = 0
+        output.prebuffer_bytes = 1280  # 40 ms at 16 kHz mono.
+        output.playing = False
+        output.draining = False
+        first, second = b'\x01\x00' * 320, b'\x02\x00' * 320
+
+        output.queue.append(first)
+        output.buffered += len(first)
+        result = bytearray(640)
+        output._callback(result, 320, None, None)
+        self.assertEqual(result, bytes(640))
+        self.assertEqual(output.buffered, 640)
+
+        output.queue.append(second)
+        output.buffered += len(second)
+        output._callback(result, 320, None, None)
+        self.assertEqual(result, first)
+        output._callback(result, 320, None, None)
+        self.assertEqual(result, second)
+        output._callback(result, 320, None, None)
+        self.assertFalse(output.playing)
+
+        output.queue.append(first)
+        output.buffered += len(first)
+        output._callback(result, 320, None, None)
+        self.assertEqual(result, bytes(640))
+
     def test_device_discovery_uses_bridge_thread_for_wasapi(self):
         from passport_console import Controller
         with tempfile.TemporaryDirectory() as directory:
@@ -127,6 +159,24 @@ class ValidationTests(unittest.TestCase):
 
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_output_drain_plays_short_final_frame(self):
+        output = AudioOutput.__new__(AudioOutput)
+        output.lock = threading.Lock()
+        final = b'\x03\x00' * 320
+        output.queue = deque([final])
+        output.buffered = len(final)
+        output.prebuffer_bytes = 1280
+        output.playing = False
+        output.draining = False
+        task = asyncio.create_task(output.drain())
+        await asyncio.sleep(.01)
+        result = bytearray(640)
+        output._callback(result, 320, None, None)
+        await asyncio.wait_for(task, .5)
+        self.assertEqual(result, final)
+        self.assertEqual(output.buffered, 0)
+        self.assertFalse(output.draining)
+
     async def test_network_gap_does_not_replay_silence_before_fresh_speech(self):
         chunks = []
         speech = b'\x01\x00' * 320

@@ -82,6 +82,10 @@ class AudioOutput:
         self.queue = deque()
         self.buffered = 0
         self.dropped = 0
+        # Two 20 ms frames absorb ordinary poll jitter without building a long tail.
+        self.prebuffer_bytes = self.rate * self.channels * 2 * 40 // 1000
+        self.playing = False
+        self.draining = False
         self.stream = sd.RawOutputStream(device=device, samplerate=self.rate,
             channels=self.channels, dtype="int16", blocksize=0, latency="low", callback=self._callback)
         try:
@@ -93,6 +97,10 @@ class AudioOutput:
     def _callback(self, outdata, frames, timing, status):
         outdata[:] = b"\0" * len(outdata)
         with self.lock:
+            if not self.playing and not self.draining:
+                if self.buffered < self.prebuffer_bytes:
+                    return
+                self.playing = True
             position = 0
             while self.queue and position < len(outdata):
                 chunk = self.queue.popleft()
@@ -102,6 +110,8 @@ class AudioOutput:
                 self.buffered -= count
                 if count < len(chunk):
                     self.queue.appendleft(chunk[count:])
+            if position < len(outdata):
+                self.playing = False
 
     def push(self, pcm):
         np = self.np
@@ -122,10 +132,16 @@ class AudioOutput:
             self.buffered += len(chunk)
 
     async def drain(self):
+        # A short final utterance may contain less than the prebuffer threshold.
+        with self.lock:
+            self.draining = True
         deadline = time.monotonic() + 1
         while self.buffered and time.monotonic() < deadline:
             await asyncio.sleep(.02)
         await asyncio.sleep(.15)  # PortAudio/virtual cable tail before closing IME.
+        with self.lock:
+            self.draining = False
+            self.playing = False
 
     def close(self):
         self.stream.abort()
