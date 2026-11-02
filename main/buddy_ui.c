@@ -442,8 +442,15 @@ static void draw_list(lv_layer_t *layer, const char *title, const char *const *i
         if (!s->reset_open && i == BUDDY_SETTINGS_BRIGHTNESS) { snprintf(value, sizeof(value), "%u/4", s->brightness_level); suffix = value; }
         else if (!s->reset_open && i == BUDDY_SETTINGS_SOUND) suffix = s->sound_mode == BUDDY_SOUND_OFF ? "关闭" : (s->sound_mode == BUDDY_SOUND_ON ? "开启" : "自动");
         else if (!s->reset_open && i == BUDDY_SETTINGS_SLEEP) {
-            static const char *const modes[] = {"1 分钟", "5 分钟", "10 分钟", "永不"};
-            suffix = modes[s->sleep_mode < BUDDY_SLEEP_COUNT ? s->sleep_mode : BUDDY_SLEEP_5_MIN];
+            static const char *const modes[BUDDY_SLEEP_COUNT] = {
+                [BUDDY_SLEEP_1_MIN] = "1 分钟",
+                [BUDDY_SLEEP_5_MIN] = "5 分钟",
+                [BUDDY_SLEEP_10_MIN] = "10 分钟",
+                [BUDDY_SLEEP_NEVER] = "永不",
+                [BUDDY_SLEEP_10_SEC] = "10 秒",
+                [BUDDY_SLEEP_30_SEC] = "30 秒",
+            };
+            suffix = modes[s->sleep_mode < BUDDY_SLEEP_COUNT ? s->sleep_mode : BUDDY_DEFAULT_SLEEP_MODE];
         }
         else if (!s->reset_open && i == BUDDY_SETTINGS_WIFI) suffix = s->lan_mode ? "开" : "关";
         else if (!s->reset_open && i == BUDDY_SETTINGS_BLE) suffix = s->ble_enabled ? "开" : "关";
@@ -616,13 +623,15 @@ bool buddy_ui_write_status(FILE *stream)
     if (stream == NULL || !s_have_snapshot) return false;
     return fprintf(stream, "FAP_UI {\"running\":%u,\"completion_seq\":%llu,"
                    "\"stale\":%s,\"screen_off\":%s,\"page\":%u,"
-                   "\"sound_mode\":%u,\"character\":%u}\n",
+                   "\"sound_mode\":%u,\"character\":%u,"
+                   "\"sleep_mode\":%u,\"brightness_level\":%u}\n",
                    s_snapshot.running,
                    (unsigned long long)s_snapshot.codex_usage.completion_sequence,
                    s_snapshot.heartbeat_stale ? "true" : "false",
                    s_snapshot.screen_off ? "true" : "false",
                    (unsigned)s_snapshot.page, (unsigned)s_snapshot.sound_mode,
-                   (unsigned)s_snapshot.character) > 0 && fflush(stream) == 0;
+                   (unsigned)s_snapshot.character, (unsigned)s_snapshot.sleep_mode,
+                   (unsigned)s_snapshot.brightness_level) > 0 && fflush(stream) == 0;
 }
 
 bool buddy_ui_write_screenshot(FILE *stream)

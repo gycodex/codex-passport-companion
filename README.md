@@ -32,7 +32,7 @@ The first live Codex heartbeat after connecting or reconnecting over BLE/LAN pla
 
 **LAN support:** the firmware supports encrypted Wi-Fi transport for computers without Bluetooth. Provision from a phone using the device hotspot and web page, or use USB. See [LAN setup and validation scope](docs/LAN.md). Existing Bluetooth functionality remains available.
 
-The display backlight turns off after five idle minutes while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it on, with automatic dimming to 20% after the configured timeout. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never** and saves the choice. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
+The display defaults to brightness level **1/4** (40%) and turns off after **30 idle seconds** while Bluetooth stays connected. New work, live completion events, pairing codes and pending confirmations wake it; active or waiting tasks keep it on, with automatic dimming to 20% after the configured timeout. Any click or long press wakes the display without also activating a control. Settings → **Auto sleep** offers **1 min / 5 min / 10 min / Never / 10 sec / 30 sec** and saves the choice. Previously saved sleep choices remain effective after an update. Idle heartbeats do not postpone sleep. Display animation redraws pause while the backlight is off. This is not deep sleep.
 
 The implementation starts from this repository's `demo/claude-buddy-port` reference and
 keeps its bounded state machine, pixel UI, encrypted Nordic UART BLE transport, bonding,
@@ -177,7 +177,7 @@ Settings > Sound cycles Off / On / Auto and persists the selection. Auto is the 
 
 ### Working dim mode
 
-The existing 1/5/10 minute auto-sleep setting dims active work to the minimum 20% backlight after the timer expires, while idle time still turns the display off. Routine heartbeats do not restart the timer. Completion, a transition to idle, a key press, or an attention prompt restores the selected brightness. Never disables both automatic behaviors. Device menus, status text and provisioning pages use Simplified Chinese.
+The 10/30 second and 1/5/10 minute auto-sleep settings dim active work to the minimum 20% backlight after the timer expires, while idle time still turns the display off. Routine heartbeats do not restart the timer. Completion, a transition to idle, a key press, or an attention prompt restores the selected brightness. Never disables both automatic behaviors. Device menus, status text and provisioning pages use Simplified Chinese.
 
 ## License and release status
 

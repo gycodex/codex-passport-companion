@@ -113,7 +113,7 @@ static void buddy_settings_snapshot_defaults(buddy_settings_snapshot_t *settings
     memset(settings, 0, sizeof(*settings));
     settings->ble_enabled = true;
     settings->sound_mode = BUDDY_SOUND_AUTO;
-    settings->sleep_mode = BUDDY_SLEEP_5_MIN;
+    settings->sleep_mode = BUDDY_DEFAULT_SLEEP_MODE;
 }
 
 static void buddy_settings_defaults(void)

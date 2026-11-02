@@ -74,6 +74,18 @@ static void test_offline_initialization(void)
     assert(state.connection == BUDDY_CONNECTION_OFFLINE);
     assert(snapshot.character == BUDDY_CHARACTER_SLEEP);
     assert(snapshot.page == BUDDY_PAGE_HOME);
+    assert(snapshot.brightness_level == 1);
+    assert(snapshot.sleep_mode == BUDDY_SLEEP_30_SEC);
+    buddy_action_t action;
+    buddy_event_t tick = {.type = BUDDY_EVENT_TICK};
+    buddy_event_t wake = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
+    buddy_state_reduce(&state, &tick, 29999, &action);
+    assert(!state.screen_off);
+    buddy_state_reduce(&state, &tick, 30000, &action);
+    assert(state.screen_off);
+    buddy_state_reduce(&state, &wake, 30001, &action);
+    assert(action.type == BUDDY_ACTION_DISPLAY_BACKLIGHT);
+    assert(action.brightness_percent == 40);
 }
 
 static void test_heartbeat_mapping(void)
@@ -508,6 +520,7 @@ static void test_timeout_stale_prompt_is_ignored(void)
     buddy_event_t approve = {.type = BUDDY_EVENT_KEY_CLICK, .key = BUDDY_KEY_OK};
 
     buddy_state_init(&state, NULL);
+    state.settings.sleep_mode = BUDDY_SLEEP_NEVER; /* Isolate prompt expiry from display sleep. */
     buddy_state_reduce(&state, &heartbeat, 1000, &action);
     buddy_state_reduce(&state, &prompt, 1001, &action);
     buddy_state_reduce(&state, &tick, 31001, &action);
@@ -1066,16 +1079,19 @@ static void test_completion_sound_is_an_edge_not_a_replayed_snapshot(void)
 
 static void test_work_dimming_uses_sleep_timer(void)
 {
-    const uint64_t delays[] = {60000, 300000, 600000};
-    for (unsigned mode = 0; mode < 3; ++mode) {
+    const uint8_t modes[] = {BUDDY_SLEEP_1_MIN, BUDDY_SLEEP_5_MIN, BUDDY_SLEEP_10_MIN,
+                             BUDDY_SLEEP_10_SEC, BUDDY_SLEEP_30_SEC};
+    const uint64_t delays[] = {60000, 300000, 600000, 10000, 30000};
+    for (unsigned mode = 0; mode < sizeof(modes) / sizeof(modes[0]); ++mode) {
         buddy_state_t state;
         buddy_action_t action;
-        buddy_settings_snapshot_t settings = {.sleep_mode = mode};
+        buddy_settings_snapshot_t settings = {.sleep_mode = modes[mode]};
         buddy_event_t hb = {.type = BUDDY_EVENT_HEARTBEAT};
         hb.heartbeat.connected = true;
         hb.heartbeat.running = 1;
         hb.heartbeat.codex_usage.present = true;
         buddy_state_init(&state, &settings);
+        state.brightness_level = 4; /* Dimming must preserve a user-selected level. */
         buddy_state_reduce(&state, &hb, 100, &action);
         for (uint64_t t = 101; t < 100 + delays[mode]; t += 1000)
             buddy_state_reduce(&state, &hb, t, &action);
@@ -1159,21 +1175,33 @@ static void test_idle_sleep_and_wake(void)
     buddy_state_reduce(&state, &tick, 9999999, &action);
     assert(!state.screen_off);
     /* Every timed option expires at its own boundary. */
-    const uint64_t deadlines[] = {60000, 300000, 600000};
-    for (unsigned mode = 0; mode < 3; ++mode) {
-        settings.sleep_mode = mode;
+    const uint8_t modes[] = {BUDDY_SLEEP_1_MIN, BUDDY_SLEEP_5_MIN, BUDDY_SLEEP_10_MIN,
+                             BUDDY_SLEEP_10_SEC, BUDDY_SLEEP_30_SEC};
+    const uint64_t deadlines[] = {60000, 300000, 600000, 10000, 30000};
+    for (unsigned mode = 0; mode < sizeof(modes) / sizeof(modes[0]); ++mode) {
+        settings.sleep_mode = modes[mode];
         buddy_state_init(&state, &settings);
         buddy_state_reduce(&state, &tick, deadlines[mode] - 1, &action);
         assert(!state.screen_off);
         buddy_state_reduce(&state, &tick, deadlines[mode], &action);
         assert(state.screen_off);
     }
+    state.settings.sleep_mode = BUDDY_SLEEP_10_MIN;
     state.page = BUDDY_PAGE_SETTINGS;
     state.settings_selection = BUDDY_SETTINGS_SLEEP;
     key.key = BUDDY_KEY_OK;
     buddy_state_reduce(&state, &key, 600001, &action); /* Wake only. */
     buddy_state_reduce(&state, &key, 600002, &action);
     assert(state.settings.sleep_mode == BUDDY_SLEEP_NEVER);
+    assert(action.type == BUDDY_ACTION_SETTINGS);
+    buddy_state_reduce(&state, &key, 600003, &action);
+    assert(state.settings.sleep_mode == BUDDY_SLEEP_10_SEC);
+    assert(action.type == BUDDY_ACTION_SETTINGS);
+    buddy_state_reduce(&state, &key, 600004, &action);
+    assert(state.settings.sleep_mode == BUDDY_SLEEP_30_SEC);
+    assert(action.type == BUDDY_ACTION_SETTINGS);
+    buddy_state_reduce(&state, &key, 600005, &action);
+    assert(state.settings.sleep_mode == BUDDY_SLEEP_1_MIN);
     assert(action.type == BUDDY_ACTION_SETTINGS);
 }
 

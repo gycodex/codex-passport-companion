@@ -429,19 +429,28 @@ static void test_sleep_mode_persistence(void)
     buddy_settings_snapshot_t snapshot;
     test_setup(&storage);
     assert(buddy_settings_load(&snapshot) == ESP_OK);
-    assert(snapshot.sleep_mode == BUDDY_SLEEP_5_MIN);
+    assert(snapshot.sleep_mode == BUDDY_SLEEP_30_SEC);
     assert(buddy_settings_set_sleep_mode(BUDDY_SLEEP_NEVER) == ESP_OK);
     assert(storage.has_sleep && storage.sleep == BUDDY_SLEEP_NEVER);
     buddy_settings_test_set_backend(&fake_backend, &storage);
     assert(buddy_settings_init() == ESP_OK);
     assert(buddy_settings_load(&snapshot) == ESP_OK);
     assert(snapshot.sleep_mode == BUDDY_SLEEP_NEVER);
+    const uint8_t modes[] = {BUDDY_SLEEP_10_SEC, BUDDY_SLEEP_30_SEC};
+    for (unsigned i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+        assert(buddy_settings_set_sleep_mode(modes[i]) == ESP_OK);
+        assert(storage.has_sleep && storage.sleep == modes[i]);
+        buddy_settings_test_set_backend(&fake_backend, &storage);
+        assert(buddy_settings_init() == ESP_OK);
+        assert(buddy_settings_load(&snapshot) == ESP_OK);
+        assert(snapshot.sleep_mode == modes[i]);
+    }
     assert(buddy_settings_set_sleep_mode(BUDDY_SLEEP_COUNT) == ESP_ERR_INVALID_ARG);
     storage.sleep = 255;
     buddy_settings_test_set_backend(&fake_backend, &storage);
     assert(buddy_settings_init() == ESP_OK);
     assert(buddy_settings_load(&snapshot) == ESP_OK);
-    assert(snapshot.sleep_mode == BUDDY_SLEEP_5_MIN);
+    assert(snapshot.sleep_mode == BUDDY_SLEEP_30_SEC);
 }
 
 int main(void)

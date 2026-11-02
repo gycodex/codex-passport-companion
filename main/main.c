@@ -738,7 +738,7 @@ static esp_err_t buddy_factory_reset(buddy_state_t *state)
     if (s_lan_mode) esp_restart();
     defaults.ble_enabled = true;
     defaults.sound_mode = BUDDY_SOUND_AUTO;
-    defaults.sleep_mode = BUDDY_SLEEP_5_MIN;
+    defaults.sleep_mode = BUDDY_DEFAULT_SLEEP_MODE;
     buddy_default_name(defaults.name);
     if (buddy_settings_set_name(defaults.name) != ESP_OK ||
         buddy_settings_flush(true) != ESP_OK) {
@@ -1303,7 +1303,7 @@ void app_main(void)
                  BSP_LCD_MOSI, BSP_LCD_SCLK, BSP_LCD_CS, BSP_LCD_DC, BSP_LCD_BL);
         return;
     }
-    bsp_display_backlight(100);
+    bsp_display_backlight(20U + BUDDY_DEFAULT_BRIGHTNESS_LEVEL * 20U);
     s_initial_battery_available = bsp_battery_init() == ESP_OK;
 
     if (buddy_settings_init() != ESP_OK || buddy_settings_load(&s_initial_settings) != ESP_OK) {

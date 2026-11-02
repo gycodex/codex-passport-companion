@@ -513,8 +513,8 @@ void buddy_state_init(buddy_state_t *state, const buddy_settings_snapshot_t *set
     state->connection = BUDDY_CONNECTION_OFFLINE;
     state->page = BUDDY_PAGE_HOME;
     state->heartbeat_stale = true;
-    state->brightness_level = 4;
-    state->settings.sleep_mode = BUDDY_SLEEP_5_MIN;
+    state->brightness_level = BUDDY_DEFAULT_BRIGHTNESS_LEVEL;
+    state->settings.sleep_mode = BUDDY_DEFAULT_SLEEP_MODE;
     if (settings != NULL) {
         state->settings = *settings;
         state->highest_celebrated_level = settings->highest_celebrated_level;
@@ -729,9 +729,16 @@ void buddy_state_reduce(buddy_state_t *state, const buddy_event_t *event,
                      state->confirmation != BUDDY_CONFIRM_NONE;
     bool working = state->connected && !state->heartbeat_stale &&
                    (state->running > 0U || state->waiting > 0U);
-    static const uint64_t delays[] = {60000ULL, 300000ULL, 600000ULL, 0ULL};
+    static const uint64_t delays[BUDDY_SLEEP_COUNT] = {
+        [BUDDY_SLEEP_1_MIN] = 60000ULL,
+        [BUDDY_SLEEP_5_MIN] = 300000ULL,
+        [BUDDY_SLEEP_10_MIN] = 600000ULL,
+        [BUDDY_SLEEP_NEVER] = 0ULL,
+        [BUDDY_SLEEP_10_SEC] = 10000ULL,
+        [BUDDY_SLEEP_30_SEC] = 30000ULL,
+    };
     uint8_t mode = state->settings.sleep_mode < BUDDY_SLEEP_COUNT
-                       ? state->settings.sleep_mode : BUDDY_SLEEP_5_MIN;
+                       ? state->settings.sleep_mode : BUDDY_DEFAULT_SLEEP_MODE;
     uint64_t delay = delays[mode];
     bool expired = delay != 0U && now_ms >= state->last_activity_ms &&
                    now_ms - state->last_activity_ms >= delay;
