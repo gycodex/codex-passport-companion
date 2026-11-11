@@ -1,10 +1,16 @@
 # Run through build_windows_exe.py to include dependency notices and provenance.
 from pathlib import Path
+import ssl
 from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
 
 root = Path(SPECPATH).parent
 datas = [(str(root / 'tools/console'), 'console'),
          (str(root / 'build-windows-exe/notices'), 'notices')]
+# Retain the build runtime's additional certificate distrust policy, if present.
+# Its SSL module loads this resource relative to ssl.__file__ in frozen apps too.
+runtime_ca = Path(ssl.__file__).with_name('codex-rejected-cas.pem')
+if runtime_ca.is_file():
+    datas.append((str(runtime_ca), '.'))
 binaries = []
 hiddenimports = ['webview.platforms.winforms', 'webview.platforms.edgechromium',
                  'pynput.keyboard._win32', 'pynput.mouse._win32', '_cffi_backend',
