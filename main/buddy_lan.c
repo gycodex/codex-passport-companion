@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <errno.h>
 #include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -42,6 +43,15 @@ static lan_config_t s_config;
 static atomic_bool s_up, s_authenticated;
 static atomic_uint s_generation;
 static atomic_uint s_event_stack_free;
+/* USB-only timing/counter diagnostics; never retain payloads or identifiers.
+ * Phases: 0 closed, 1 hello, 2 receive, 3 decrypt, 4 voice, 5 encrypt, 6 send. */
+static atomic_uint s_io_phase, s_io_since_ms, s_rx_bytes, s_reply_bytes, s_request_seq;
+static atomic_int s_socket_error;
+static void io_phase(unsigned phase)
+{
+    atomic_store(&s_io_since_ms, (unsigned)(esp_timer_get_time() / 1000));
+    atomic_store(&s_io_phase, phase);
+}
 static portMUX_TYPE s_ip_lock = portMUX_INITIALIZER_UNLOCKED;
 static char s_ip[16];
 static buddy_lan_receive_t s_receive;
@@ -199,7 +209,7 @@ static bool send_all(int socket, const char *data, size_t length)
 {
     while (length) {
         int n = send(socket, data, length, 0);
-        if (n <= 0) return false;
+        if (n <= 0) { atomic_store(&s_socket_error, errno); return false; }
         data += n; length -= (size_t)n;
     }
     return true;
@@ -208,9 +218,14 @@ static int read_line(int socket, char *line, size_t size)
 {
     /* One request at a time; finite socket timeout also bounds slow clients. */
     int64_t deadline = esp_timer_get_time() + 35000000LL;
+    atomic_store(&s_rx_bytes, 0);
     for (size_t n = 0; n + 1 < size; ++n) {
         if (esp_timer_get_time() > deadline || !atomic_load(&s_up)) return -1;
-        if (recv(socket, &line[n], 1, 0) != 1) return -1;
+        if (recv(socket, &line[n], 1, 0) != 1) {
+            atomic_store(&s_socket_error, errno);
+            return -1;
+        }
+        atomic_store(&s_rx_bytes, (unsigned)n + 1);
         if (line[n] == '\n') { line[n] = 0; return (int)n; }
     }
     return -1;
@@ -262,6 +277,8 @@ static void serve(int client, lan_buffers_t *buffers)
     uint32_t generation = atomic_fetch_add(&s_generation, 1) + 1;
     mbedtls_gcm_context gcm;
     mbedtls_gcm_init(&gcm);
+    atomic_store(&s_socket_error, 0);
+    io_phase(1);
     if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, s_config.key, 256) != 0) goto done;
     int hello_size = read_line(client, buffers->line, sizeof(buffers->line));
     if (hello_size <= 0 || hello_size > 96) goto done;
@@ -286,7 +303,9 @@ static void serve(int client, lan_buffers_t *buffers)
     int length = snprintf(hello, sizeof(hello), "{\"v\":1,\"nonce\":\"%s\",\"auth\":\"%s\"}\n", hex, auth);
     if (!send_all(client, hello, (size_t)length)) goto done;
     for (uint32_t sequence = 1; sequence < 0x80000000U; ++sequence) {
+        io_phase(2);
         int n = read_line(client, buffers->line, sizeof(buffers->line));
+        io_phase(3);
         if (generation != atomic_load(&s_generation)) break;
         uint8_t seq_bytes[4];
         if (n < 41 || buffers->line[8] != ':' || ((n-9) & 1) || !decode(buffers->line, seq_bytes, 4)) break;
@@ -299,6 +318,7 @@ static void serve(int client, lan_buffers_t *buffers)
                 (const uint8_t *)"FAP-LAN-1:C", 11, buffers->ciphertext+size-16, 16,
                 buffers->ciphertext, buffers->plaintext) != 0) break;
         buffers->plaintext[size-16] = 0;
+        atomic_store(&s_request_seq, sequence);
         atomic_store(&s_authenticated, true);
         if (sequence == 1) {
             struct timeval timeout = {.tv_sec=35};
@@ -307,6 +327,7 @@ static void serve(int client, lan_buffers_t *buffers)
         const char *reply;
         size_t reply_size;
         if (size - 16 == 16 && memcmp(buffers->plaintext, "{\"voice\":\"poll\"}", 16) == 0) {
+            io_phase(4);
             reply = (const char *)buffers->plaintext;
             reply_size = buddy_voice_poll((char *)buffers->plaintext, sizeof(buffers->plaintext));
             if (!reply_size) break;
@@ -320,6 +341,7 @@ static void serve(int client, lan_buffers_t *buffers)
             reply_size = strlen(reply);
         }
         make_nonce(challenge, sequence | 0x80000000U, nonce);
+        io_phase(5);
         if (mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT, reply_size, nonce, 12,
                 (const uint8_t *)"FAP-LAN-1:S", 11, (const uint8_t *)reply, buffers->ciphertext, 16, tag) != 0) break;
         memcpy(buffers->ciphertext+reply_size, tag, 16);
@@ -327,9 +349,12 @@ static void serve(int client, lan_buffers_t *buffers)
         encode(buffers->ciphertext, buffers->line+9, reply_size+16);
         size_t wire_size = 9 + 2*(reply_size+16);
         buffers->line[wire_size++] = '\n';
+        atomic_store(&s_reply_bytes, (unsigned)wire_size);
+        io_phase(6);
         if (!send_all(client, buffers->line, wire_size)) break;
     }
 done:
+    io_phase(0);
     buddy_voice_disconnect();
     atomic_store(&s_authenticated, false);
     mbedtls_gcm_free(&gcm);
@@ -416,12 +441,19 @@ bool buddy_lan_usb_command(const char *line)
     }
     if (strcmp(line, "FAP_LAN_STATUS_V1") == 0) {
         char ip[16]; buddy_lan_ip(ip);
-        printf("FAP_LAN {\"configured\":%s,\"ip\":\"%s\",\"port\":%u,\"connected\":%s,\"crypto_ok\":%s,\"setup\":%s,\"heap\":%lu,\"uptime_s\":%lu,\"event_stack_free\":%u,\"sound_stage\":%lu,\"sound_played\":%lu}\n",
+        wifi_ap_record_t ap;
+        wifi_ps_type_t ps;
+        int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
+        int power_save = esp_wifi_get_ps(&ps) == ESP_OK ? (int)ps : -1;
+        printf("FAP_LAN {\"configured\":%s,\"ip\":\"%s\",\"port\":%u,\"connected\":%s,\"crypto_ok\":%s,\"setup\":%s,\"heap\":%lu,\"uptime_s\":%lu,\"event_stack_free\":%u,\"sound_stage\":%lu,\"sound_played\":%lu,\"io_phase\":%u,\"io_phase_ms\":%u,\"rx_bytes\":%u,\"reply_bytes\":%u,\"request_seq\":%u,\"socket_error\":%d,\"wifi_ps\":%d,\"wifi_rssi\":%d}\n",
                buddy_lan_configured() ? "true" : "false", ip, BUDDY_LAN_PORT,
                buddy_lan_connected() ? "true" : "false", crypto_self_test() ? "true" : "false",
                s_setup ? "true" : "false", (unsigned long)esp_get_free_heap_size(),
                (unsigned long)(esp_timer_get_time()/1000000), atomic_load(&s_event_stack_free),
-               (unsigned long)buddy_sound_stage(), (unsigned long)buddy_sound_play_count());
+               (unsigned long)buddy_sound_stage(), (unsigned long)buddy_sound_play_count(),
+               atomic_load(&s_io_phase), (unsigned)(esp_timer_get_time() / 1000) - atomic_load(&s_io_since_ms),
+               atomic_load(&s_rx_bytes), atomic_load(&s_reply_bytes), atomic_load(&s_request_seq),
+               atomic_load(&s_socket_error), power_save, rssi);
         return true;
     }
     if (strncmp(line, "FAP_LAN_CONFIG_V1 ", 18) != 0) return false;

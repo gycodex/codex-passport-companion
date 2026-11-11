@@ -1,8 +1,10 @@
-# v0.2.5 下载与安装
+# v0.2.6 下载与安装
 
-**推荐普通 Windows 用户下载 [Passport-Windows-x64-v0.2.5.zip](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.5/Passport-Windows-x64-v0.2.5.zip)**，不要选页面自动生成的 Source code。
+**推荐普通 Windows 用户下载 [Passport-Windows-x64-v0.2.6.zip](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.6/Passport-Windows-x64-v0.2.6.zip)**，不要选页面自动生成的 Source code。
 
-[发布页](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.5) · [三步上手](QUICKSTART.zh_CN.md) · [版本说明](releases/v0.2.5.md)
+[发布页](https://github.com/gycodex/codex-passport-companion/releases/tag/v0.2.6) · [三步上手](QUICKSTART.zh_CN.md) · [版本说明](releases/v0.2.6.md)
+
+仅更新电脑端可下载 [客户端独立包](https://github.com/gycodex/codex-passport-companion/releases/download/v0.2.6/Passport-Desktop-Windows-x64-v0.2.6.zip)。请先从程序或托盘退出旧版，再完整解压新包并运行 `Passport.exe`。设备新增息屏选项和只读诊断需要配套固件；电脑端的播放缓冲修复无需刷机。
 
 这是预发布版，适用于 Windows 10/11 x64、FoloToy AI Passport（ESP32-C3、8 MB Flash）。
 
@@ -27,7 +29,7 @@
 - EXE 内置可选豆包适配所需 Frida 17.18.0；不包含 Codex、输入法或虚拟音频驱动。
 - 关闭窗口后仍在托盘运行；更新前从程序或托盘菜单退出。
 - macOS/Linux 用户使用源码启动脚本 `bash start-console.command`，需要自行准备 Python；本版一体包仅面向 Windows x64。
-- 已验证单台设备升级、任务同步与提示音播放执行；第二台电脑、20 次重连、30 分钟稳定性与缩小缓冲后的持续语音录制仍未完整验收。
+- 已验证单台设备升级、任务同步与提示音播放执行。语音曾出现设备回复超时；后续短录音未中断，但仍有缺帧与缓冲不足，尚未确认根因或完整修复。第二台电脑、20 次重连及 30 分钟稳定性未完成。
 - 程序未代码签名；从项目 Release 下载并核对 SHA256。第三方许可范围及待确认事项见 NOTICE。
 
 ## 从源码复现 Windows 一体包
@@ -36,7 +38,7 @@
 
 ```powershell
 python -m pip install -r tools/requirements-build-exe.txt
-python tools/build_easy_release.py --firmware-dir build-release --idf-dir $env:IDF_PATH --output dist/release-v0.2.5
+python tools/build_easy_release.py --firmware-dir build-release --idf-dir $env:IDF_PATH --output dist/release-v0.2.6
 ```
 
 输出目录必须不存在。脚本检查版本一致性和干净工作区，构建两个 EXE，保留依赖许可证并生成一体 ZIP 和校验值。

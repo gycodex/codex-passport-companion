@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from voice_bridge import AudioOutput, decode_packet, decode_adpcm, parse_shortcut, voice_loop, voice_session
@@ -21,6 +22,69 @@ def packet(**changes):
 
 
 class AudioThreadTests(unittest.TestCase):
+    def test_batched_network_audio_stays_continuous_with_60ms_host_blocks(self):
+        output = AudioOutput.__new__(AudioOutput)
+        output.lock = threading.Lock()
+        output.queue = deque()
+        output.buffered = 0
+        output.prebuffer_bytes = 1280
+        output.playing = output.draining = False
+        output.underruns = output.host_underflows = 0
+        began = False
+        for tick in range(0, 1000, 20):
+            if tick % 80 == 0:  # Bursty delivery, with no source frame loss.
+                chunk = b'\x01\x00' * 1280
+                output.queue.append(chunk)
+                output.buffered += len(chunk)
+            if tick % 60 == 0:
+                result = bytearray(1920)
+                output._callback(result, 960, None, None)
+                began = began or output.playing
+                if began:
+                    self.assertEqual(result, b'\x01\x00' * 960, f'gap at {tick} ms')
+        self.assertTrue(began)
+        self.assertEqual(output.underruns, 0)
+
+    def test_underruns_distinguish_waiting_drain_and_host_underflow(self):
+        output = AudioOutput.__new__(AudioOutput)
+        output.lock = threading.Lock()
+        output.queue = deque()
+        output.buffered = 0
+        output.prebuffer_bytes = 1280
+        output.playing = output.draining = False
+        output.underruns = output.host_underflows = 0
+        result = bytearray(640)
+        output._callback(result, 320, None, None)
+        self.assertEqual(output.underruns, 0)  # Waiting for speech isn't a gap.
+        output.playing = True
+        output._callback(result, 320, None, SimpleNamespace(output_underflow=True))
+        self.assertEqual(output.underruns, 1)
+        self.assertEqual(output.host_underflows, 1)
+        output.draining = True
+        output._callback(result, 320, None, None)
+        self.assertEqual(output.underruns, 1)  # Normal tail isn't a gap.
+
+    def test_large_host_callback_waits_for_full_block_and_jitter_reserve(self):
+        output = AudioOutput.__new__(AudioOutput)
+        output.lock = threading.Lock()
+        speech = b'\x01\x00' * 640  # 40 ms of continuous non-silent audio.
+        output.queue = deque([speech])
+        output.buffered = len(speech)
+        output.prebuffer_bytes = 1280
+        output.playing = output.draining = False
+        output.underruns = output.host_underflows = 0
+        result = bytearray(1920)  # Host requests 60 ms, larger than prebuffer.
+
+        output._callback(result, 960, None, None)
+        self.assertEqual(result, bytes(1920))
+        self.assertEqual(output.buffered, len(speech))
+        # Once 100 ms is available, every sample in the host block is speech.
+        output.queue.append(speech + speech[:640])
+        output.buffered += 1920
+        output._callback(result, 960, None, None)
+        self.assertEqual(result, b'\x01\x00' * 960)
+        self.assertEqual(output.buffered, 1280)
+
     def test_output_prebuffers_after_start_and_network_gap(self):
         output = AudioOutput.__new__(AudioOutput)
         output.lock = threading.Lock()
@@ -29,6 +93,7 @@ class AudioThreadTests(unittest.TestCase):
         output.prebuffer_bytes = 1280  # 40 ms at 16 kHz mono.
         output.playing = False
         output.draining = False
+        output.underruns = output.host_underflows = 0
         first, second = b'\x01\x00' * 320, b'\x02\x00' * 320
 
         output.queue.append(first)
@@ -40,8 +105,13 @@ class AudioThreadTests(unittest.TestCase):
 
         output.queue.append(second)
         output.buffered += len(second)
+        # Need one complete callback plus the jitter reserve before playback.
+        output.queue.append(second)
+        output.buffered += len(second)
         output._callback(result, 320, None, None)
         self.assertEqual(result, first)
+        output._callback(result, 320, None, None)
+        self.assertEqual(result, second)
         output._callback(result, 320, None, None)
         self.assertEqual(result, second)
         output._callback(result, 320, None, None)
@@ -179,6 +249,7 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_network_gap_does_not_replay_silence_before_fresh_speech(self):
         chunks = []
+        reports = []
         speech = b'\x01\x00' * 320
         class Output:
             dropped = 0
@@ -202,8 +273,10 @@ class SessionTests(unittest.IsolatedAsyncioTestCase):
                     self.is_connected = False
                     return packet(sequence=25)
         with patch('voice_bridge.AudioOutput', Output), patch('voice_bridge.Shortcuts', Keys):
-            await voice_loop(Client(), {'voice_output':'test'}, lambda *a, **k: None)
+            await voice_loop(Client(), {'voice_output':'test'}, lambda kind, **data: reports.append((kind, data)))
         self.assertEqual(chunks, [speech, speech])
+        diagnostics = [data['message'] for kind, data in reports if kind == 'voice_event']
+        self.assertTrue(any('缺帧 23' in message for message in diagnostics))
 
     async def test_parent_cancel_during_cleanup_is_not_swallowed(self):
         cleaning = asyncio.Event()

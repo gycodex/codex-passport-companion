@@ -82,6 +82,8 @@ class AudioOutput:
         self.queue = deque()
         self.buffered = 0
         self.dropped = 0
+        self.underruns = 0
+        self.host_underflows = 0
         # Two 20 ms frames absorb ordinary poll jitter without building a long tail.
         self.prebuffer_bytes = self.rate * self.channels * 2 * 40 // 1000
         self.playing = False
@@ -97,8 +99,12 @@ class AudioOutput:
     def _callback(self, outdata, frames, timing, status):
         outdata[:] = b"\0" * len(outdata)
         with self.lock:
+            if status and status.output_underflow:
+                self.host_underflows += 1
             if not self.playing and not self.draining:
-                if self.buffered < self.prebuffer_bytes:
+                # blocksize=0 lets the host vary callback sizes. Keep the jitter
+                # reserve AFTER filling the first block, even if it exceeds 40 ms.
+                if self.buffered < len(outdata) + self.prebuffer_bytes:
                     return
                 self.playing = True
             position = 0
@@ -111,6 +117,8 @@ class AudioOutput:
                 if count < len(chunk):
                     self.queue.appendleft(chunk[count:])
             if position < len(outdata):
+                if not self.draining:
+                    self.underruns += 1
                 self.playing = False
 
     def push(self, pcm):
@@ -289,6 +297,7 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
         output = MeterOutput() if cfg["voice_output"] == "meter" else AudioOutput(cfg["voice_output"])
         shortcuts = Shortcuts(cfg)
         session, expected, last_report = 0, 0, 0
+        missing_frames = 0
         poll_ms = 0
         while client.is_connected and not stop_requested():
             poll_start = time.monotonic()
@@ -299,6 +308,9 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
                 if started:
                     raise ValueError("语音会话切换异常，请重新连接")
                 session, expected = packet["session"], 0
+                missing_frames = 0
+                underruns_start = getattr(output, "underruns", 0)
+                host_underflows_start = getattr(output, "host_underflows", 0)
                 report("voice_event", message="收到设备录音开始事件")
                 shortcuts.send(shortcuts.start)
                 report("voice_event", message="开始快捷键已发送" if shortcuts.enabled else "快捷键未启用（仅传输或测试音频）")
@@ -307,6 +319,7 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
                 gap = packet["sequence"] - expected
                 if gap < 0 or gap > 100:
                     raise ValueError("语音帧顺序异常，请重新连接")
+                missing_frames += gap
                 # The output callback already emitted silence while waiting for the
                 # network. Replaying lost frames as silence delays fresh speech twice.
                 # Each ADPCM frame carries its own decoder state, so gaps are safe.
@@ -315,6 +328,9 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
             if started and not packet["recording"] and not packet["pending"]:
                 await output.drain()
                 started = False
+                report("voice_event", message=(f"录音传输统计：缺帧 {missing_frames}，"
+                    f"播放缓冲不足 {getattr(output, 'underruns', 0) - underruns_start} 次，"
+                    f"音频驱动断流 {getattr(output, 'host_underflows', 0) - host_underflows_start} 次"))
                 reason = {2: "设备超过 5 秒未收到电脑轮询，已停止录音", 3: "已达到两分钟录音上限", 4: "设备操作或采集异常导致录音停止"}.get(packet.get("stop_reason"))
                 if reason: report("voice_event", message=reason)
                 shortcuts.send(shortcuts.stop)
@@ -324,6 +340,9 @@ async def voice_loop(client, cfg, report, stop_requested=lambda: False):
                 report("synced", voice=dict(status="recording" if started else "ready",
                     peak=packet["peak"] if started else 0, dropped=packet["dropped"] + output.dropped,
                     poll_ms=poll_ms, device_pending_ms=packet["pending"] * 20,
+                    missing_frames=missing_frames,
+                    output_underruns=getattr(output, "underruns", 0),
+                    host_underflows=getattr(output, "host_underflows", 0),
                     stop_reason=packet.get("stop_reason", 0),
                     clipped=packet.get("clipped", 0), samples=packet.get("samples", 0),
                     output_pending_ms=round(1000 * getattr(output, "buffered", 0) /
